@@ -2,6 +2,7 @@ import { getTokenPrice, TOKENS } from './api/price';
 import { getPoolData, getSwapQuote } from './api/pool';
 import { getGasEstimate } from './api/gas';
 import { getTrustScore } from './api/trust';
+import { resolveToken, getTokenMetadata, DexScreenerTokenMetadata } from './tokens';
 
 export interface SimulateInput {
   fromToken: string;
@@ -18,6 +19,20 @@ export interface StressTest {
   pnlUSD: number;
 }
 
+export interface ProfitScenario {
+  label: string;
+  priceGainPercent: number;
+  portfolioValueUSD: number;
+  pnlUSD: number;
+}
+
+export interface TokenMetadataOutput {
+  symbol: string;
+  name: string;
+  liquidity: number;
+  volume24h: number;
+}
+
 export interface SimulateOutput {
   fromToken: string;
   toToken: string;
@@ -31,6 +46,7 @@ export interface SimulateOutput {
   dailyEarningsUSD: number | null;
   weeklyEarningsUSD: number | null;
   stressTests: StressTest[];
+  profitScenarios: ProfitScenario[];
   trustScore: number;
   trustTier: string;
   trustReasons: string[];
@@ -38,6 +54,7 @@ export interface SimulateOutput {
   degenLabel: string;
   warnings: string[];
   simulatedAt: string;
+  toTokenMetadata: TokenMetadataOutput | null;
 }
 
 const STABLECOINS = ['USDC', 'USDT', 'DAI'];
@@ -63,39 +80,43 @@ function calculateLPAPR(tvlUSD: number): number {
 
 export async function simulateStrategy(input: SimulateInput): Promise<SimulateOutput> {
   const warnings: string[] = [];
+  let usedPriceFallback = false;
 
-  // STEP 1: Fetch prices
+  // STEP 1: Resolve token inputs (ticker or address) and fetch prices
   let fromTokenPrice = 1;
   let toTokenPrice = 1;
-  let fromTokenAddress = '';
-  let toTokenAddress = '';
+  let fromTokenAddress = resolveToken(input.fromToken);
+  let toTokenAddress = resolveToken(input.toToken);
+
+  // Track original inputs for display
+  const fromTokenDisplay = fromTokenAddress && input.fromToken.toLowerCase().startsWith('0x')
+    ? `${input.fromToken.slice(0, 6)}...${input.fromToken.slice(-4)}`
+    : input.fromToken.toUpperCase();
+  const toTokenDisplay = toTokenAddress && input.toToken.toLowerCase().startsWith('0x')
+    ? `${input.toToken.slice(0, 6)}...${input.toToken.slice(-4)}`
+    : input.toToken.toUpperCase();
 
   try {
-    const fromTokenKey = input.fromToken.toUpperCase() as keyof typeof TOKENS;
-    const toTokenKey = input.toToken.toUpperCase() as keyof typeof TOKENS;
-
-    if (fromTokenKey in TOKENS) {
-      fromTokenAddress = TOKENS[fromTokenKey];
+    if (fromTokenAddress) {
       const fromPriceData = await getTokenPrice(fromTokenAddress);
       if (fromPriceData) {
         fromTokenPrice = parseFloat(fromPriceData.priceUsd);
       } else {
-        warnings.push(`⚠️ Price data unavailable for ${input.fromToken} — using fallback`);
+        warnings.push(`⚠️ Price data unavailable for ${fromTokenDisplay} — using fallback`);
       }
     } else {
-      warnings.push(`⚠️ ${input.fromToken} not in known tokens — using fallback price of 1`);
+      warnings.push(`⚠️ ${fromTokenDisplay} not recognized — using fallback price of 1`);
     }
 
-    if (toTokenKey in TOKENS) {
-      toTokenAddress = TOKENS[toTokenKey];
+    if (toTokenAddress) {
       const toPriceData = await getTokenPrice(toTokenAddress);
       if (toPriceData) {
         toTokenPrice = parseFloat(toPriceData.priceUsd);
       } else {
-        warnings.push(`⚠️ Price data unavailable for ${input.toToken} — using fallback`);
+        warnings.push(`⚠️ Price data unavailable for ${toTokenDisplay} — using fallback`);
       }
     } else {
-      warnings.push(`⚠️ ${input.toToken} not in known tokens — using fallback price of 1`);
+      warnings.push(`⚠️ ${toTokenDisplay} not recognized — using fallback price of 1`);
     }
   } catch (error) {
     warnings.push('⚠️ Price API error — using fallback prices');
@@ -123,14 +144,14 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
         toAmount = parseFloat(quote.actualOutput);
         slippagePercent = parseFloat(quote.slippagePercent);
       } else {
-        // Fallback calculation without slippage
+        // Fallback calculation using price-based mathematical estimate
         toAmount = input.amountUSD / toTokenPrice;
-        warnings.push('⚠️ Swap quote unavailable — using estimate without slippage');
+        usedPriceFallback = true;
       }
     } else {
       // Fallback if addresses not available
       toAmount = input.amountUSD / toTokenPrice;
-      warnings.push('⚠️ Token addresses unavailable — using estimate');
+      usedPriceFallback = true;
     }
 
     toAmountUSD = toAmount * toTokenPrice;
@@ -139,6 +160,12 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     fromAmount = input.amountUSD / fromTokenPrice;
     toAmount = input.amountUSD / toTokenPrice;
     toAmountUSD = input.amountUSD;
+    usedPriceFallback = true;
+  }
+
+  // Add subtle note if using price-based fallback (not scary warning)
+  if (usedPriceFallback) {
+    warnings.push('ℹ️ Using price-based estimate (live quote unavailable)');
   }
 
   // STEP 3: Gas
@@ -154,8 +181,8 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     warnings.push('⚠️ Gas API error — using fallback $0.05');
   }
 
-  // STEP 4: Net profit
-  const netProfitUSD = toAmountUSD - input.amountUSD - gasCostUSD;
+  // STEP 4: Net profit (fixed: only subtract gas, value is preserved in output token)
+  const netProfitUSD = toAmountUSD - gasCostUSD;
 
   // STEP 5: LP calculations (only if action === "lp")
   let lpAPR: number | null = null;
@@ -198,25 +225,47 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     }
   }
 
-  // STEP 6: Stress tests
+  // STEP 6: Stress tests (loss scenarios)
   const stressTests: StressTest[] = [
     {
       label: '-20% drop',
       priceDropPercent: 20,
       portfolioValueUSD: toAmount * (toTokenPrice * 0.8),
-      pnlUSD: toAmount * (toTokenPrice * 0.8) - input.amountUSD,
+      pnlUSD: toAmount * (toTokenPrice * 0.8) - toAmountUSD,
     },
     {
       label: '-40% drop',
       priceDropPercent: 40,
       portfolioValueUSD: toAmount * (toTokenPrice * 0.6),
-      pnlUSD: toAmount * (toTokenPrice * 0.6) - input.amountUSD,
+      pnlUSD: toAmount * (toTokenPrice * 0.6) - toAmountUSD,
     },
     {
       label: '-60% drop',
       priceDropPercent: 60,
       portfolioValueUSD: toAmount * (toTokenPrice * 0.4),
-      pnlUSD: toAmount * (toTokenPrice * 0.4) - input.amountUSD,
+      pnlUSD: toAmount * (toTokenPrice * 0.4) - toAmountUSD,
+    },
+  ];
+
+  // STEP 6b: Profit scenarios (gain scenarios)
+  const profitScenarios: ProfitScenario[] = [
+    {
+      label: '+20% pump',
+      priceGainPercent: 20,
+      portfolioValueUSD: toAmount * (toTokenPrice * 1.2),
+      pnlUSD: toAmount * (toTokenPrice * 1.2) - toAmountUSD,
+    },
+    {
+      label: '+50% pump',
+      priceGainPercent: 50,
+      portfolioValueUSD: toAmount * (toTokenPrice * 1.5),
+      pnlUSD: toAmount * (toTokenPrice * 1.5) - toAmountUSD,
+    },
+    {
+      label: '+100% pump',
+      priceGainPercent: 100,
+      portfolioValueUSD: toAmount * (toTokenPrice * 2.0),
+      pnlUSD: toAmount * (toTokenPrice * 2.0) - toAmountUSD,
     },
   ];
 
@@ -263,7 +312,7 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     degenScore += 15;
   }
 
-  if (isVolatileToken(input.toToken)) {
+  if (isVolatileToken(toTokenDisplay)) {
     degenScore += 10;
   }
 
@@ -283,17 +332,36 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     warnings.push('💸 Large position — consider dollar cost averaging');
   }
 
-  if (netProfitUSD < 0) {
-    warnings.push('📉 Strategy results in a net loss at current prices');
+  // Fixed net loss warning: only if gas is more than 1% of trade
+  if (gasCostUSD > toAmountUSD * 0.01) {
+    warnings.push('📉 High gas cost relative to trade size');
   }
 
   if (lpAPR && lpAPR > 40) {
     warnings.push('🔥 High APR often means high impermanent loss risk');
   }
 
+  // STEP 10: Fetch token metadata for toToken
+  let toTokenMetadata: TokenMetadataOutput | null = null;
+  if (toTokenAddress) {
+    try {
+      const metadata = await getTokenMetadata(toTokenAddress);
+      if (metadata) {
+        toTokenMetadata = {
+          symbol: metadata.symbol,
+          name: metadata.name,
+          liquidity: metadata.liquidity,
+          volume24h: metadata.volume24h,
+        };
+      }
+    } catch (error) {
+      // Silently fail - metadata is optional
+    }
+  }
+
   return {
-    fromToken: input.fromToken,
-    toToken: input.toToken,
+    fromToken: fromTokenDisplay,
+    toToken: toTokenDisplay,
     fromAmount,
     toAmount,
     toAmountUSD,
@@ -304,6 +372,7 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     dailyEarningsUSD,
     weeklyEarningsUSD,
     stressTests,
+    profitScenarios,
     trustScore,
     trustTier,
     trustReasons,
@@ -311,5 +380,6 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     degenLabel,
     warnings,
     simulatedAt: new Date().toISOString(),
+    toTokenMetadata,
   };
 }
