@@ -3,24 +3,34 @@ import Groq from 'groq-sdk';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `You are ArbiSafe, an expert DeFi strategy simulator agent on Arbitrum. You help users simulate and evaluate DeFi strategies before they execute them with real money.
+const SYSTEM_PROMPT = `You are ArbiSafe, an expert AI agent for simulating DeFi strategies on Arbitrum. You're sharp, direct, and speak like a knowledgeable crypto-native friend — not a corporate chatbot. You use light humor, you're honest about risks, and you give clear recommendations.
 
-You have access to real onchain data. When a user describes a strategy, extract these parameters:
-- fromToken (USDC, USDT, or WETH)
-- toToken (ARB, WETH, GMX)  
-- amountUSD (number)
-- action (swap or lp)
-- protocol (camelot, gmx, uniswap, aave)
+You have real-time access to Arbitrum onchain data. When users describe a strategy, extract simulation parameters and trigger a simulation.
 
-When you have enough information, output a special JSON block at the END of your response in this exact format:
+PARAMETER EXTRACTION RULES:
+- fromToken: what they're swapping FROM. Default to USDC if unclear. Can be a ticker (USDC) or contract address (0x...)
+- toToken: what they're swapping TO. Can be a ticker or CA
+- amountUSD: the dollar amount. Ask if not specified.
+- action: 'swap' for simple swaps, 'lp' if they mention liquidity, LP, yield, farming
+- protocol: camelot (default for most swaps on Arbitrum), gmx (for perps/leveraged), uniswap, aave (for lending)
+
+When you have all parameters, output EXACTLY this at the end of your response:
 <simulate>
-{"fromToken":"USDC","toToken":"ARB","amountUSD":200,"action":"swap","protocol":"camelot"}
+{"fromToken":"USDC","toToken":"ARB","amountUSD":500,"action":"swap","protocol":"camelot"}
 </simulate>
 
-If you don't have enough info yet, ask the user for the missing details in a friendly conversational way.
+RESPONSE STYLE:
+- Confirm what you understood before simulating: 'Got it — simulating X for you...'
+- After simulation results come in, interpret them in 3-5 sentences
+- Lead with the key number (how much they get)
+- Comment on slippage, trust score, and degen score
+- End with a clear verdict: ✅ Looks solid / ⚠️ Proceed carefully / 🚨 High risk
 
-Always be concise, use emojis sparingly, and speak like a knowledgeable DeFi friend — not a robot. 
-After a simulation runs, interpret the results for the user in plain English. Highlight risks, opportunities, and give a clear recommendation: proceed, proceed with caution, or avoid.`;
+DISCLAIMER: Always end your first message with a small disclaimer line.
+
+If someone asks about a contract address directly (0x...), acknowledge you'll look it up via DexScreener.
+If someone asks a general DeFi question (not a simulation), answer it directly and helpfully.
+Never make up token prices or protocol data — only reference what the simulation returns.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,23 +49,34 @@ export async function POST(request: NextRequest) {
       ...messages as Array<{ role: 'user' | 'assistant'; content: string }>,
     ];
 
-    // If simulation results are provided, append interpretation request
+    // If simulation results are provided, inject as hidden context
     if (simulationResult) {
       groqMessages.push({
         role: 'user',
-        content: `[SIMULATION COMPLETE - interpret these results for the user in 3-4 sentences, be specific about numbers, give a clear recommendation]:
+        content: `[SIMULATION RESULTS - interpret these for the user in 3-5 sentences, lead with key numbers, comment on slippage/trust/degen, end with verdict]:
 ${JSON.stringify(simulationResult, null, 2)}`,
       });
     }
 
-    const completion = await groq.chat.completions.create({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-      messages: groqMessages,
-      temperature: 0.7,
-      max_tokens: 1024,
-    });
+    let assistantResponse: string;
+    
+    try {
+      const completion = await groq.chat.completions.create({
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        messages: groqMessages,
+        temperature: 0.7,
+        max_tokens: 1024,
+      });
 
-    const assistantResponse = completion.choices[0]?.message?.content || '';
+      assistantResponse = completion.choices[0]?.message?.content || '';
+    } catch (groqError) {
+      console.error('Groq API error:', groqError);
+      // Fallback response if Groq fails
+      return NextResponse.json({
+        response: "ArbiSafe's brain is having a moment. Try again in a few seconds — the LLM might be warming up. 🛡️",
+        simulationParams: null,
+      });
+    }
 
     // Parse <simulate> block if present
     let simulationParams = null;
@@ -66,6 +87,7 @@ ${JSON.stringify(simulationResult, null, 2)}`,
         simulationParams = JSON.parse(simulateMatch[1].trim());
       } catch {
         // Invalid JSON in simulate block, ignore
+        console.warn('Failed to parse simulation parameters');
       }
     }
 
@@ -76,9 +98,11 @@ ${JSON.stringify(simulationResult, null, 2)}`,
 
   } catch (error) {
     console.error('Agent API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    
+    // Return graceful fallback instead of 500 error
+    return NextResponse.json({
+      response: "Something went wrong on my end. Give me a sec and try again — I'm still learning. 🛡️",
+      simulationParams: null,
+    });
   }
 }
