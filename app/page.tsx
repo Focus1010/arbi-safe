@@ -132,7 +132,7 @@ export default function Home() {
       console.error('Agent error:', err);
       setMessages([
         ...newMessages,
-        { role: 'assistant', content: "ArbiSafe's having a moment. Try again in a few seconds. 🛡️" },
+        { role: 'assistant', content: "Sorry, I hit a snag fetching that data. Try again in a moment �" },
       ]);
     } finally {
       setIsThinking(false);
@@ -186,6 +186,7 @@ export default function Home() {
             borderRadius: '4px'
           }}>Agent #162</span>
           <span style={{ color: '#6a6a8a', fontSize: '12px' }}>Arbitrum Sepolia</span>
+          <span style={{ color: '#4a90e2', fontSize: '10px', marginLeft: '4px' }}>● Powered by Arbitrum</span>
         </div>
       </header>
 
@@ -237,33 +238,39 @@ export default function Home() {
           </div>
         ))}
 
-        {/* Suggestion Chips */}
-        {showChips && messages.length === 1 && (
-          <div className="flex flex-col gap-2 pl-9 mt-2">
-            {[
-              'Swap $200 USDC → ARB on Camelot',
-              'LP $500 USDC/WETH on Camelot',
-              'Is it safe to put $5000 into GMX?'
-            ].map((chip, i) => (
-              <button
-                key={i}
-                onClick={() => handleSend(chip)}
-                style={{
-                  backgroundColor: '#0e0e1e',
-                  border: '0.5px solid #2a2a4a',
-                  color: '#8a8ab0',
-                  fontSize: '11px',
-                  padding: '5px 12px',
-                  borderRadius: '20px',
-                  alignSelf: 'flex-start',
-                  cursor: 'pointer'
-                }}
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Suggestion Chips with fade transition */}
+        <div 
+          className="flex flex-col gap-2 pl-9 mt-2"
+          style={{
+            opacity: showChips && messages.length === 1 ? 1 : 0,
+            transform: showChips && messages.length === 1 ? 'translateY(0)' : 'translateY(-10px)',
+            transition: 'opacity 300ms ease-out, transform 300ms ease-out',
+            pointerEvents: showChips && messages.length === 1 ? 'auto' : 'none'
+          }}
+        >
+          {[
+            'Swap $200 USDC → ARB on Camelot',
+            'LP $500 USDC/WETH on Camelot',
+            'Is it safe to put $5000 into GMX?'
+          ].map((chip, i) => (
+            <button
+              key={i}
+              onClick={() => handleSend(chip)}
+              style={{
+                backgroundColor: '#0e0e1e',
+                border: '0.5px solid #2a2a4a',
+                color: '#8a8ab0',
+                fontSize: '11px',
+                padding: '5px 12px',
+                borderRadius: '20px',
+                alignSelf: 'flex-start',
+                cursor: 'pointer'
+              }}
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
 
         {/* Typing Indicator */}
         {isThinking && (
@@ -621,6 +628,8 @@ function FullReportModal({ data, onClose }: { data: SimulationResult; onClose: (
         )}
         <div style={{ fontSize: '10px', color: '#4a4a6a', textAlign: 'center', borderTop: '0.5px solid #1a1a2a', paddingTop: '16px' }}>
           This simulation uses real market data but cannot predict future prices. Always do your own research and never invest more than you can afford to lose.
+          <br /><br />
+          ArbiSafe is registered on the ERC-8004 Identity Registry as Agent #162 on Arbitrum Sepolia. Registration TX: 0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a
         </div>
       </div>
     </div>

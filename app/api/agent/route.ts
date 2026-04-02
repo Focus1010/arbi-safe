@@ -14,10 +14,12 @@ PARAMETER EXTRACTION RULES:
 - action: 'swap' for simple swaps, 'lp' if they mention liquidity, LP, yield, farming
 - protocol: camelot (default for most swaps on Arbitrum), gmx (for perps/leveraged), uniswap, aave (for lending)
 
-When you have all parameters, output EXACTLY this at the end of your response:
+When you have all parameters, output EXACTLY this at the end of your response (these tags are invisible to users - they trigger the simulation):
 <simulate>
 {"fromToken":"USDC","toToken":"ARB","amountUSD":500,"action":"swap","protocol":"camelot"}
 </simulate>
+
+IMPORTANT: NEVER show the raw <simulate> tags in your visible response text to the user. The tags should only appear at the very end and be completely invisible. Speak naturally without mentioning any XML tags.
 
 RESPONSE STYLE:
 - Confirm what you understood before simulating: 'Got it — simulating X for you...'
@@ -78,7 +80,7 @@ ${JSON.stringify(simulationResult, null, 2)}`,
       });
     }
 
-    // Parse <simulate> block if present
+    // Parse <simulate> block if present and strip it from response
     let simulationParams = null;
     const simulateMatch = assistantResponse.match(/<simulate>([\s\S]*?)<\/simulate>/);
     
@@ -86,9 +88,10 @@ ${JSON.stringify(simulationResult, null, 2)}`,
       try {
         simulationParams = JSON.parse(simulateMatch[1].trim());
       } catch {
-        // Invalid JSON in simulate block, ignore
         console.warn('Failed to parse simulation parameters');
       }
+      // Remove the <simulate> block from the visible response
+      assistantResponse = assistantResponse.replace(/<simulate>[\s\S]*?<\/simulate>/, '').trim();
     }
 
     return NextResponse.json({

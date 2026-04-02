@@ -88,13 +88,36 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
   let fromTokenAddress = resolveToken(input.fromToken);
   let toTokenAddress = resolveToken(input.toToken);
 
-  // Track original inputs for display
-  const fromTokenDisplay = fromTokenAddress && input.fromToken.toLowerCase().startsWith('0x')
-    ? `${input.fromToken.slice(0, 6)}...${input.fromToken.slice(-4)}`
-    : input.fromToken.toUpperCase();
-  const toTokenDisplay = toTokenAddress && input.toToken.toLowerCase().startsWith('0x')
-    ? `${input.toToken.slice(0, 6)}...${input.toToken.slice(-4)}`
-    : input.toToken.toUpperCase();
+  // Track original inputs for display - fetch symbols from DexScreener if using contract addresses
+  let fromTokenDisplay = input.fromToken.toUpperCase();
+  let toTokenDisplay = input.toToken.toUpperCase();
+
+  // If input is a contract address, try to get the symbol from metadata
+  if (fromTokenAddress && input.fromToken.toLowerCase().startsWith('0x')) {
+    try {
+      const metadata = await getTokenMetadata(fromTokenAddress);
+      if (metadata?.symbol) {
+        fromTokenDisplay = metadata.symbol;
+      } else {
+        fromTokenDisplay = `${input.fromToken.slice(0, 6)}...${input.fromToken.slice(-4)}`;
+      }
+    } catch {
+      fromTokenDisplay = `${input.fromToken.slice(0, 6)}...${input.fromToken.slice(-4)}`;
+    }
+  }
+
+  if (toTokenAddress && input.toToken.toLowerCase().startsWith('0x')) {
+    try {
+      const metadata = await getTokenMetadata(toTokenAddress);
+      if (metadata?.symbol) {
+        toTokenDisplay = metadata.symbol;
+      } else {
+        toTokenDisplay = `${input.toToken.slice(0, 6)}...${input.toToken.slice(-4)}`;
+      }
+    } catch {
+      toTokenDisplay = `${input.toToken.slice(0, 6)}...${input.toToken.slice(-4)}`;
+    }
+  }
 
   try {
     if (fromTokenAddress) {
