@@ -1,5 +1,3 @@
----
-
 # 🛡️ ArbiSafe
 
 > Simulate before you ape.
@@ -65,6 +63,8 @@ ArbiSafe is registered on the ERC-8004 Identity Registry on Arbitrum Sepolia as 
 ---
 
 ## How It Works
+
+```
 User message
 │
 ▼
@@ -101,6 +101,7 @@ executor  extracts strategy params
 ▼
 Response + simulation card
 rendered in chat
+```
 
 ---
 
@@ -162,11 +163,12 @@ Open http://localhost:3000
 ## ERC-8004 Registration
 
 ArbiSafe is registered as an agent on the ERC-8004 Identity Registry — the Ethereum standard for trustless AI agent identity, reputation, and discovery.
-Network:          Arbitrum Sepolia
-Contract:         0x8004A818BFB912233c491871b3d84c89A494BD9e
-Agent ID:         #162
-Owner wallet:     0x9431a4E212cfcadC2F37381b47765b2d6Bcd74cc
-Agent metadata:   https://arbisafe.vercel.app/agent.json
+
+Network:          Arbitrum Sepolia  
+Contract:         0x8004A818BFB912233c491871b3d84c89A494BD9e  
+Agent ID:         #162  
+Owner wallet:     0x9431a4E212cfcadC2F37381b47765b2d6Bcd74cc  
+Agent metadata:   https://arbisafe.vercel.app/agent.json  
 Registration TX:  0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a
 
 The agent metadata file (`/agent.json`) is publicly resolvable and describes ArbiSafe's capabilities, service endpoints, and identity per the ERC-8004 spec.
@@ -174,6 +176,8 @@ The agent metadata file (`/agent.json`) is publicly resolvable and describes Arb
 ---
 
 ## Project Structure
+
+```
 arbisafe/
 ├── src/
 │   ├── app/
@@ -203,6 +207,7 @@ arbisafe/
 ├── scripts/
 │   └── register-agent.ts        # ERC-8004 registration script
 └── .env.local                    # Environment variables (not committed)
+```
 
 ---
 
