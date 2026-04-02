@@ -1,15 +1,33 @@
 import axios from 'axios';
 import { TOKENS_REGISTRY } from '@/lib/tokens';
 
-// Export TOKENS for backward compatibility
+// Re-export for backward compatibility
+export { TOKENS_REGISTRY };
+
+// Keep minimal TOKENS export for backward compatibility
 export const TOKENS = {
-  ARB: TOKENS_REGISTRY.ARB.address,
-  USDC: TOKENS_REGISTRY.USDC.address,
-  USDT: TOKENS_REGISTRY.USDT.address,
-  WETH: TOKENS_REGISTRY.WETH.address,
-  GMX: TOKENS_REGISTRY.GMX.address,
+  ARB: '0x912CE59144191C1204E64559FE8253a0e49E6548',
+  USDC: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+  USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+  WETH: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+  GMX: '0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a',
 } as const;
 
+// Unified token data structure from DexScreener
+export interface TokenData {
+  address: string;
+  symbol: string;
+  name: string;
+  priceUsd: number;
+  priceChange24h: string;
+  volume24h: string;
+  liquidity: string;
+  pairAddress: string;
+  dexId: string;
+  confidence: number;
+}
+
+// Legacy interface for backward compatibility
 export interface TokenPriceData {
   priceUsd: string;
   symbol: string;
@@ -18,28 +36,45 @@ export interface TokenPriceData {
   priceChange24h: string;
   pairAddress: string;
   dexId: string;
-  confidence: number; // 0-1 score based on liquidity and volume
+  confidence: number;
 }
 
-const DEXSCREENER_API_URL = 'https://api.dexscreener.com/latest/dex/tokens';
+const DEXSCREENER_TOKENS_URL = 'https://api.dexscreener.com/latest/dex/tokens';
+const DEXSCREENER_SEARCH_URL = 'https://api.dexscreener.com/latest/dex/search';
 
 /**
- * Get token price with 24h change and confidence score
- * Uses best pair selection based on liquidity
+ * CORE FUNCTION: lookupToken
+ * Single source of truth for ALL token lookups
+ * NEVER trust LLM knowledge - always fetch from DexScreener
  */
-export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceData | null> {
+export async function lookupToken(input: string): Promise<TokenData | null> {
+  const normalizedInput = input.trim();
+  
+  // Check if it's a contract address (0x...)
+  const isContractAddress = /^0x[a-fA-F0-9]{40}$/i.test(normalizedInput);
+  
+  if (isContractAddress) {
+    return await lookupByAddress(normalizedInput.toLowerCase());
+  } else {
+    return await lookupBySymbol(normalizedInput.toUpperCase());
+  }
+}
+
+/**
+ * Lookup by contract address
+ */
+async function lookupByAddress(address: string): Promise<TokenData | null> {
   try {
-    const response = await axios.get(`${DEXSCREENER_API_URL}/${tokenAddress}`, {
+    const response = await axios.get(`${DEXSCREENER_TOKENS_URL}/${address}`, {
       timeout: 10000,
     });
 
     const pairs = response.data?.pairs;
 
     if (!pairs || pairs.length === 0) {
+      console.error(`Token not found on Arbitrum: ${address}`);
       return null;
     }
-
-    const inputAddress = tokenAddress.toLowerCase();
 
     // Filter Arbitrum pairs where the queried address is actually in the pair
     const arbitrumPairs = pairs.filter((p: any) => {
@@ -48,11 +83,13 @@ export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceDat
       const baseAddr = p.baseToken?.address?.toLowerCase();
       const quoteAddr = p.quoteToken?.address?.toLowerCase();
       
-      // Only include pairs where the queried address matches one of the tokens
-      return baseAddr === inputAddress || quoteAddr === inputAddress;
+      return baseAddr === address || quoteAddr === address;
     });
 
-    if (arbitrumPairs.length === 0) return null;
+    if (arbitrumPairs.length === 0) {
+      console.error(`Token not found on Arbitrum: ${address}`);
+      return null;
+    }
 
     // Sort by liquidity to get most reliable pair
     const sortedPairs = arbitrumPairs.sort((a: any, b: any) => 
@@ -67,27 +104,33 @@ export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceDat
     const baseAddr = bestPair.baseToken?.address?.toLowerCase();
     const quoteAddr = bestPair.quoteToken?.address?.toLowerCase();
     
-    let tokenSymbol;
-    if (baseAddr === inputAddress) {
+    let tokenSymbol: string;
+    let tokenName: string;
+    
+    if (baseAddr === address) {
       tokenSymbol = bestPair.baseToken?.symbol || '';
-    } else if (quoteAddr === inputAddress) {
+      tokenName = bestPair.baseToken?.name || '';
+    } else if (quoteAddr === address) {
       tokenSymbol = bestPair.quoteToken?.symbol || '';
+      tokenName = bestPair.quoteToken?.name || '';
     } else {
-      return null; // Should not happen due to filter above
+      console.error('Address mismatch after filtering - this should not happen');
+      return null;
     }
     
     // Calculate confidence score (0-1)
-    // Based on liquidity threshold of $100k and volume of $10k
     const liquidityScore = Math.min(liquidity / 100000, 1) * 0.6;
     const volumeScore = Math.min(volume / 10000, 1) * 0.4;
     const confidence = liquidityScore + volumeScore;
 
     return {
-      priceUsd: bestPair.priceUsd || '0',
+      address: address,
       symbol: tokenSymbol,
-      liquidityUsd: bestPair.liquidity?.usd || '0',
-      volume24h: bestPair.volume?.h24 || '0',
+      name: tokenName,
+      priceUsd: parseFloat(bestPair.priceUsd) || 0,
       priceChange24h: bestPair.priceChange?.h24 || '0',
+      volume24h: bestPair.volume?.h24 || '0',
+      liquidity: bestPair.liquidity?.usd || '0',
       pairAddress: bestPair.pairAddress,
       dexId: bestPair.dexId,
       confidence,
@@ -96,15 +139,156 @@ export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceDat
     if (axios.isAxiosError(error)) {
       console.error('DexScreener API error:', error.message);
     } else {
-      console.error('Unexpected error fetching token price:', error);
+      console.error('Unexpected error in lookupByAddress:', error);
     }
     return null;
   }
 }
 
 /**
- * Search for a token by symbol/name on DexScreener
- * Returns matching Arbitrum tokens
+ * Lookup by symbol/ticker
+ */
+async function lookupBySymbol(symbol: string): Promise<TokenData | null> {
+  // First check TOKENS_REGISTRY for known address
+  const registryEntry = TOKENS_REGISTRY[symbol];
+  
+  if (registryEntry) {
+    // Use the address from registry and do address lookup
+    return await lookupByAddress(registryEntry.address.toLowerCase());
+  }
+  
+  // Not in registry - search DexScreener
+  try {
+    const response = await axios.get(
+      `${DEXSCREENER_SEARCH_URL}?q=${encodeURIComponent(symbol)}`,
+      { timeout: 10000 }
+    );
+
+    const pairs = response.data?.pairs;
+    if (!pairs || !Array.isArray(pairs)) {
+      console.error(`Token ${symbol} not found on Arbitrum`);
+      return null;
+    }
+
+    // Filter Arbitrum pairs where symbol matches base or quote
+    const matchingPairs = pairs.filter((p: any) => {
+      if (p.chainId !== 'arbitrum') return false;
+      
+      const baseSymbol = p.baseToken?.symbol?.toUpperCase();
+      const quoteSymbol = p.quoteToken?.symbol?.toUpperCase();
+      
+      return baseSymbol === symbol || quoteSymbol === symbol;
+    });
+
+    if (matchingPairs.length === 0) {
+      console.error(`Token ${symbol} not found on Arbitrum`);
+      return null;
+    }
+
+    // Sort by liquidity
+    const sortedPairs = matchingPairs.sort((a: any, b: any) => 
+      parseFloat(b.liquidity?.usd || 0) - parseFloat(a.liquidity?.usd || 0)
+    );
+
+    const bestPair = sortedPairs[0];
+    const liquidity = parseFloat(bestPair.liquidity?.usd || 0);
+    const volume = parseFloat(bestPair.volume?.h24 || 0);
+    
+    // Determine which token matches our queried symbol
+    const baseSymbol = bestPair.baseToken?.symbol?.toUpperCase();
+    const quoteSymbol = bestPair.quoteToken?.symbol?.toUpperCase();
+    
+    let tokenAddress: string;
+    let tokenSymbol: string;
+    let tokenName: string;
+    
+    if (baseSymbol === symbol) {
+      tokenAddress = bestPair.baseToken?.address || '';
+      tokenSymbol = bestPair.baseToken?.symbol || '';
+      tokenName = bestPair.baseToken?.name || '';
+    } else if (quoteSymbol === symbol) {
+      tokenAddress = bestPair.quoteToken?.address || '';
+      tokenSymbol = bestPair.quoteToken?.symbol || '';
+      tokenName = bestPair.quoteToken?.name || '';
+    } else {
+      console.error('Symbol mismatch after filtering - this should not happen');
+      return null;
+    }
+    
+    // Calculate confidence
+    const liquidityScore = Math.min(liquidity / 100000, 1) * 0.6;
+    const volumeScore = Math.min(volume / 10000, 1) * 0.4;
+    const confidence = liquidityScore + volumeScore;
+
+    return {
+      address: tokenAddress.toLowerCase(),
+      symbol: tokenSymbol,
+      name: tokenName,
+      priceUsd: parseFloat(bestPair.priceUsd) || 0,
+      priceChange24h: bestPair.priceChange?.h24 || '0',
+      volume24h: bestPair.volume?.h24 || '0',
+      liquidity: bestPair.liquidity?.usd || '0',
+      pairAddress: bestPair.pairAddress,
+      dexId: bestPair.dexId,
+      confidence,
+    };
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      console.error('DexScreener search error:', error.message);
+    } else {
+      console.error('Unexpected error in lookupBySymbol:', error);
+    }
+    return null;
+  }
+}
+
+/**
+ * Format token data for display
+ * Returns clean string: "{symbol} ({name}) — ${price} | 24h: {change}% | Vol: ${volume} | Liq: ${liquidity}"
+ */
+export function formatTokenData(token: TokenData): string {
+  const price = token.priceUsd.toFixed(4);
+  const change = parseFloat(token.priceChange24h).toFixed(2);
+  const volume = formatCurrency(parseFloat(token.volume24h));
+  const liquidity = formatCurrency(parseFloat(token.liquidity));
+  
+  return `${token.symbol} (${token.name}) — $${price} | 24h: ${change}% | Vol: $${volume} | Liq: $${liquidity}`;
+}
+
+/**
+ * Format large numbers to readable currency
+ */
+function formatCurrency(value: number): string {
+  if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B';
+  if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+  if (value >= 1e3) return (value / 1e3).toFixed(1) + 'K';
+  return value.toFixed(2);
+}
+
+/**
+ * DEPRECATED: Use lookupToken instead
+ * Kept for backward compatibility - now delegates to lookupToken
+ */
+export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceData | null> {
+  const token = await lookupToken(tokenAddress);
+  
+  if (!token) return null;
+  
+  return {
+    priceUsd: token.priceUsd.toString(),
+    symbol: token.symbol,
+    liquidityUsd: token.liquidity,
+    volume24h: token.volume24h,
+    priceChange24h: token.priceChange24h,
+    pairAddress: token.pairAddress,
+    dexId: token.dexId,
+    confidence: token.confidence,
+  };
+}
+
+/**
+ * DEPRECATED: Use lookupToken instead
+ * Kept for backward compatibility
  */
 export async function searchTokenOnDexScreener(query: string): Promise<Array<{
   address: string;
@@ -115,40 +299,17 @@ export async function searchTokenOnDexScreener(query: string): Promise<Array<{
   volume24h: number;
   priceChange24h: number;
 }> | null> {
-  try {
-    const response = await axios.get(
-      `https://api.dexscreener.com/latest/dex/search?q=${encodeURIComponent(query)}`,
-      { timeout: 10000 }
-    );
-
-    const pairs = response.data?.pairs;
-    if (!pairs || !Array.isArray(pairs)) return null;
-
-    // Filter for Arbitrum pairs with good liquidity
-    const arbitrumPairs = pairs
-      .filter((p: any) => 
-        p.chainId === 'arbitrum' && 
-        parseFloat(p.liquidity?.usd || 0) > 50000 // Min $50k liquidity
-      )
-      .sort((a: any, b: any) => 
-        parseFloat(b.liquidity?.usd || 0) - parseFloat(a.liquidity?.usd || 0)
-      )
-      .slice(0, 5); // Top 5 results
-
-    if (arbitrumPairs.length === 0) return null;
-
-    // Map to token objects
-    return arbitrumPairs.map((pair: any) => ({
-      address: pair.baseToken?.address,
-      symbol: pair.baseToken?.symbol,
-      name: pair.baseToken?.name,
-      price: parseFloat(pair.priceUsd) || 0,
-      liquidity: parseFloat(pair.liquidity?.usd) || 0,
-      volume24h: parseFloat(pair.volume?.h24) || 0,
-      priceChange24h: parseFloat(pair.priceChange?.h24) || 0,
-    }));
-  } catch (error) {
-    console.error('Error searching token:', error);
-    return null;
-  }
+  const token = await lookupToken(query);
+  
+  if (!token) return null;
+  
+  return [{
+    address: token.address,
+    symbol: token.symbol,
+    name: token.name,
+    price: token.priceUsd,
+    liquidity: parseFloat(token.liquidity),
+    volume24h: parseFloat(token.volume24h),
+    priceChange24h: parseFloat(token.priceChange24h),
+  }];
 }

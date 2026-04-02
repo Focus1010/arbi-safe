@@ -1,3 +1,5 @@
+import { lookupToken } from './api/price';
+
 export interface TokenInfo {
   address: string;
   decimals: number;
@@ -374,85 +376,28 @@ export function resolveToken(input: string): string | null {
 }
 
 /**
- * Get token metadata from DexScreener API
+ * Get token metadata and price from DexScreener
+ * Uses lookupToken as single source of truth
  * @param address - Token contract address
- * @returns Token metadata if found on Arbitrum, null otherwise
+ * @returns Token metadata with price data
  */
 export async function getTokenMetadata(
   address: string
 ): Promise<DexScreenerTokenMetadata | null> {
-  try {
-    const response = await fetch(
-      `https://api.dexscreener.com/latest/dex/tokens/${address}`,
-      {
-        headers: {
-          Accept: 'application/json',
-        },
-        next: { revalidate: 60 }, // Cache for 60 seconds
-      }
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (!data.pairs || !Array.isArray(data.pairs)) {
-      return null;
-    }
-
-    const inputAddress = address.toLowerCase();
-
-    // Filter for Arbitrum pairs where the queried address is actually in the pair
-    const arbitrumPairs = data.pairs.filter((pair: any) => {
-      if (pair.chainId !== 'arbitrum') return false;
-      
-      const baseAddr = pair.baseToken?.address?.toLowerCase();
-      const quoteAddr = pair.quoteToken?.address?.toLowerCase();
-      
-      // Only include pairs where the queried address matches one of the tokens
-      return baseAddr === inputAddress || quoteAddr === inputAddress;
-    });
-
-    if (arbitrumPairs.length === 0) {
-      return null;
-    }
-
-    // Sort by liquidity to get the best pair
-    const sortedPairs = arbitrumPairs.sort((a: any, b: any) => {
-      const liquidityA = parseFloat(a.liquidity?.usd || '0');
-      const liquidityB = parseFloat(b.liquidity?.usd || '0');
-      return liquidityB - liquidityA;
-    });
-
-    const bestPair = sortedPairs[0];
-
-    // Determine which token in the pair matches our queried address
-    const baseAddr = bestPair.baseToken?.address?.toLowerCase();
-    const quoteAddr = bestPair.quoteToken?.address?.toLowerCase();
-    
-    let tokenInfo;
-    if (baseAddr === inputAddress) {
-      tokenInfo = bestPair.baseToken;
-    } else if (quoteAddr === inputAddress) {
-      tokenInfo = bestPair.quoteToken;
-    } else {
-      return null; // Should not happen due to filter above
-    }
-
-    return {
-      symbol: tokenInfo.symbol,
-      name: tokenInfo.name,
-      price: parseFloat(bestPair.priceUsd) || 0,
-      liquidity: bestPair.liquidity?.usd || 0,
-      volume24h: bestPair.volume?.h24 || 0,
-      pairAddress: bestPair.pairAddress,
-    };
-  } catch (error) {
-    console.error('Error fetching token metadata:', error);
+  const token = await lookupToken(address);
+  
+  if (!token) {
     return null;
   }
+
+  return {
+    symbol: token.symbol,
+    name: token.name,
+    price: token.priceUsd,
+    liquidity: parseFloat(token.liquidity) || 0,
+    volume24h: parseFloat(token.volume24h) || 0,
+    pairAddress: token.pairAddress,
+  };
 }
 
 /**
