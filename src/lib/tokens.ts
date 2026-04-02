@@ -402,31 +402,52 @@ export async function getTokenMetadata(
       return null;
     }
 
-    // Filter for Arbitrum pairs
-    const arbitrumPairs = data.pairs.filter(
-      (pair: any) => pair.chainId === 'arbitrum'
-    );
+    const inputAddress = address.toLowerCase();
+
+    // Filter for Arbitrum pairs where the queried address is actually in the pair
+    const arbitrumPairs = data.pairs.filter((pair: any) => {
+      if (pair.chainId !== 'arbitrum') return false;
+      
+      const baseAddr = pair.baseToken?.address?.toLowerCase();
+      const quoteAddr = pair.quoteToken?.address?.toLowerCase();
+      
+      // Only include pairs where the queried address matches one of the tokens
+      return baseAddr === inputAddress || quoteAddr === inputAddress;
+    });
 
     if (arbitrumPairs.length === 0) {
       return null;
     }
 
-    // Use the first Arbitrum pair (usually has highest liquidity)
-    const pair = arbitrumPairs[0];
+    // Sort by liquidity to get the best pair
+    const sortedPairs = arbitrumPairs.sort((a: any, b: any) => {
+      const liquidityA = parseFloat(a.liquidity?.usd || '0');
+      const liquidityB = parseFloat(b.liquidity?.usd || '0');
+      return liquidityB - liquidityA;
+    });
 
-    // Determine which token in the pair matches our address
-    const tokenInfo =
-      pair.baseToken.address.toLowerCase() === address.toLowerCase()
-        ? pair.baseToken
-        : pair.quoteToken;
+    const bestPair = sortedPairs[0];
+
+    // Determine which token in the pair matches our queried address
+    const baseAddr = bestPair.baseToken?.address?.toLowerCase();
+    const quoteAddr = bestPair.quoteToken?.address?.toLowerCase();
+    
+    let tokenInfo;
+    if (baseAddr === inputAddress) {
+      tokenInfo = bestPair.baseToken;
+    } else if (quoteAddr === inputAddress) {
+      tokenInfo = bestPair.quoteToken;
+    } else {
+      return null; // Should not happen due to filter above
+    }
 
     return {
       symbol: tokenInfo.symbol,
       name: tokenInfo.name,
-      price: parseFloat(pair.priceUsd) || 0,
-      liquidity: pair.liquidity?.usd || 0,
-      volume24h: pair.volume?.h24 || 0,
-      pairAddress: pair.pairAddress,
+      price: parseFloat(bestPair.priceUsd) || 0,
+      liquidity: bestPair.liquidity?.usd || 0,
+      volume24h: bestPair.volume?.h24 || 0,
+      pairAddress: bestPair.pairAddress,
     };
   } catch (error) {
     console.error('Error fetching token metadata:', error);

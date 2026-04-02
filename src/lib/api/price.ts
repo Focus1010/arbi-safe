@@ -39,8 +39,19 @@ export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceDat
       return null;
     }
 
-    // Filter Arbitrum pairs only
-    const arbitrumPairs = pairs.filter((p: any) => p.chainId === 'arbitrum');
+    const inputAddress = tokenAddress.toLowerCase();
+
+    // Filter Arbitrum pairs where the queried address is actually in the pair
+    const arbitrumPairs = pairs.filter((p: any) => {
+      if (p.chainId !== 'arbitrum') return false;
+      
+      const baseAddr = p.baseToken?.address?.toLowerCase();
+      const quoteAddr = p.quoteToken?.address?.toLowerCase();
+      
+      // Only include pairs where the queried address matches one of the tokens
+      return baseAddr === inputAddress || quoteAddr === inputAddress;
+    });
+
     if (arbitrumPairs.length === 0) return null;
 
     // Sort by liquidity to get most reliable pair
@@ -52,6 +63,19 @@ export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceDat
     const liquidity = parseFloat(bestPair.liquidity?.usd || 0);
     const volume = parseFloat(bestPair.volume?.h24 || 0);
     
+    // Determine which token matches our queried address
+    const baseAddr = bestPair.baseToken?.address?.toLowerCase();
+    const quoteAddr = bestPair.quoteToken?.address?.toLowerCase();
+    
+    let tokenSymbol;
+    if (baseAddr === inputAddress) {
+      tokenSymbol = bestPair.baseToken?.symbol || '';
+    } else if (quoteAddr === inputAddress) {
+      tokenSymbol = bestPair.quoteToken?.symbol || '';
+    } else {
+      return null; // Should not happen due to filter above
+    }
+    
     // Calculate confidence score (0-1)
     // Based on liquidity threshold of $100k and volume of $10k
     const liquidityScore = Math.min(liquidity / 100000, 1) * 0.6;
@@ -60,7 +84,7 @@ export async function getTokenPrice(tokenAddress: string): Promise<TokenPriceDat
 
     return {
       priceUsd: bestPair.priceUsd || '0',
-      symbol: bestPair.baseToken?.symbol || '',
+      symbol: tokenSymbol,
       liquidityUsd: bestPair.liquidity?.usd || '0',
       volume24h: bestPair.volume?.h24 || '0',
       priceChange24h: bestPair.priceChange?.h24 || '0',
