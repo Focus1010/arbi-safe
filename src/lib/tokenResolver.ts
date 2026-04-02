@@ -2,19 +2,35 @@ import Moralis from 'moralis';
 
 // Initialize Moralis
 let moralisInitialized = false;
+let moralisAvailable = false;
 
-export async function initMoralis() {
-  if (moralisInitialized) return;
+export async function initMoralis(): Promise<boolean> {
+  if (moralisInitialized) return moralisAvailable;
   
   if (!process.env.MORALIS_API_KEY) {
-    throw new Error('MORALIS_API_KEY not set');
+    console.log('MORALIS_API_KEY not set - operating without Moralis');
+    moralisInitialized = true;
+    moralisAvailable = false;
+    return false;
   }
   
-  await Moralis.start({
-    apiKey: process.env.MORALIS_API_KEY,
-  });
-  
-  moralisInitialized = true;
+  try {
+    await Moralis.start({
+      apiKey: process.env.MORALIS_API_KEY,
+    });
+    moralisInitialized = true;
+    moralisAvailable = true;
+    return true;
+  } catch (error) {
+    console.error('Moralis initialization failed:', error);
+    moralisInitialized = true;
+    moralisAvailable = false;
+    return false;
+  }
+}
+
+export function isMoralisAvailable(): boolean {
+  return moralisAvailable;
 }
 
 // Known token registry for Arbitrum (verified contracts only)
@@ -92,31 +108,39 @@ export async function resolveToken(input: string): Promise<ResolveResult> {
 
 /**
  * Resolve token by contract address using Moralis
+ * Falls back to error if Moralis not available
  */
 async function resolveByAddress(address: string): Promise<ResolveResult> {
+  // Check registry first
+  const knownEntry = Object.entries(KNOWN_TOKENS).find(
+    ([, data]) => data.address.toLowerCase() === address
+  );
+  
+  if (knownEntry) {
+    const [, data] = knownEntry;
+    const token: ResolvedToken = {
+      address: data.address,
+      symbol: data.symbol,
+      name: data.name,
+      decimals: data.decimals,
+      chainId: 42161, // Arbitrum
+      source: 'registry',
+      verified: true,
+    };
+    sessionCache.set(address, token);
+    return { token, error: null };
+  }
+  
+  // Try Moralis if available
+  const available = await initMoralis();
+  if (!available) {
+    return {
+      token: null,
+      error: 'Unknown contract address. Add MORALIS_API_KEY to verify unknown tokens.',
+    };
+  }
+  
   try {
-    await initMoralis();
-    
-    // Check if it's a known token first
-    const knownEntry = Object.entries(KNOWN_TOKENS).find(
-      ([, data]) => data.address.toLowerCase() === address
-    );
-    
-    if (knownEntry) {
-      const [, data] = knownEntry;
-      const token: ResolvedToken = {
-        address: data.address,
-        symbol: data.symbol,
-        name: data.name,
-        decimals: data.decimals,
-        chainId: 42161, // Arbitrum
-        source: 'registry',
-        verified: true,
-      };
-      sessionCache.set(address, token);
-      return { token, error: null };
-    }
-    
     // Query Moralis for token metadata
     const response = await Moralis.EvmApi.token.getTokenMetadata({
       chain: '0xa4b1', // Arbitrum

@@ -1,7 +1,8 @@
 import { ethers } from 'ethers';
 
-const ALCHEMY_RPC_URL = process.env.ALCHEMY_RPC_URL || 'https://arb-mainnet.g.alchemy.com/v2/demo';
-const ETH_PRICE_USD = 3500; // Will be fetched dynamically in production
+const ALCHEMY_RPC_URL = process.env.ALCHEMY_RPC_URL;
+const DEFAULT_GAS_PRICE_GWEI = 0.1;
+const ETH_PRICE_USD = 3500;
 
 export interface GasData {
   gasPriceWei: string;
@@ -9,6 +10,7 @@ export interface GasData {
   estimatedSwapCostEth: string;
   estimatedSwapCostUsd: string;
   timestamp: number;
+  source: 'alchemy' | 'fallback';
 }
 
 export interface SwapSimulation {
@@ -22,10 +24,35 @@ export interface SwapSimulation {
   route?: string;
 }
 
+function getFallbackGasData(): GasData {
+  const gasPriceGwei = DEFAULT_GAS_PRICE_GWEI;
+  const gasPriceWei = ethers.parseUnits(gasPriceGwei.toString(), 'gwei');
+  const SWAP_GAS_UNITS = 400000;
+  const totalCostWei = gasPriceWei * BigInt(SWAP_GAS_UNITS);
+  const totalCostEth = parseFloat(ethers.formatEther(totalCostWei));
+  const totalCostUsd = totalCostEth * ETH_PRICE_USD;
+  
+  return {
+    gasPriceWei: gasPriceWei.toString(),
+    gasPriceGwei: gasPriceGwei.toFixed(2),
+    estimatedSwapCostEth: totalCostEth.toFixed(6),
+    estimatedSwapCostUsd: totalCostUsd.toFixed(2),
+    timestamp: Date.now(),
+    source: 'fallback',
+  };
+}
+
 /**
  * Get current gas price from Alchemy RPC
+ * Falls back to placeholder if no API key or call fails
  */
-export async function getGasData(): Promise<GasData | null> {
+export async function getGasData(): Promise<GasData> {
+  // If no Alchemy URL, return fallback data immediately
+  if (!ALCHEMY_RPC_URL) {
+    console.log('No ALCHEMY_RPC_URL - using fallback gas data');
+    return getFallbackGasData();
+  }
+
   try {
     const provider = new ethers.JsonRpcProvider(ALCHEMY_RPC_URL);
     
@@ -46,10 +73,12 @@ export async function getGasData(): Promise<GasData | null> {
       estimatedSwapCostEth: totalCostEth.toFixed(6),
       estimatedSwapCostUsd: totalCostUsd.toFixed(2),
       timestamp: Date.now(),
+      source: 'alchemy',
     };
   } catch (error) {
     console.error('Alchemy gas fetch error:', error);
-    return null;
+    console.log('Falling back to placeholder gas data');
+    return getFallbackGasData();
   }
 }
 
