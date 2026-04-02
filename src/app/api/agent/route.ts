@@ -7,7 +7,37 @@ import { getTrustScore } from '@/lib/api/trust';
 import { simulateStrategy } from '@/lib/simulate';
 import { parseInput, formatParsedInput } from '@/lib/inputParser';
 
+import { lookupToken, TokenData } from '@/lib/api/price';
+
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+// Tag parsing helpers
+const LOOKUP_TAG_REGEX = /<lookup>(0x[a-fA-F0-9]{40})<\/lookup>/;
+const PRICE_TAG_REGEX = /<price>([^<]+)<\/price>/;
+const SIMULATE_TAG_REGEX = /<simulate>([^<]+)<\/simulate>/;
+
+function parseLookupTag(text: string): string | null {
+  const match = text.match(LOOKUP_TAG_REGEX);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function parsePriceTag(text: string): string | null {
+  const match = text.match(PRICE_TAG_REGEX);
+  return match ? match[1].trim() : null;
+}
+
+function parseSimulateTag(text: string): string | null {
+  const match = text.match(SIMULATE_TAG_REGEX);
+  return match ? match[1] : null;
+}
+
+function stripAllTags(text: string): string {
+  return text
+    .replace(LOOKUP_TAG_REGEX, '')
+    .replace(PRICE_TAG_REGEX, '')
+    .replace(SIMULATE_TAG_REGEX, '')
+    .trim();
+}
 
 // ZERO TRAINING KNOWLEDGE SYSTEM PROMPT
 // The agent MUST NEVER use its training data for token prices, identity, or protocol data
@@ -334,8 +364,7 @@ export async function POST(request: NextRequest) {
     if (simulationResult) {
       groqMessages.push({
         role: 'user',
-        content: `[SIMULATION DATA - FORMAT TERMINAL RESPONSE]:
-${JSON.stringify(simulationResult, null, 2)}`,
+        content: `[SIMULATION DATA - FORMAT TERMINAL RESPONSE]:\n${JSON.stringify(simulationResult, null, 2)}`,
       });
     }
 
@@ -345,12 +374,18 @@ ${JSON.stringify(simulationResult, null, 2)}`,
       messages: groqMessages,
       tools: TOOLS,
       tool_choice: 'auto',
-      temperature: 0.1, // LOW temperature for deterministic responses
-      max_tokens: 512,  // SHORT responses - terminal style
+      temperature: 0.1,
+      max_tokens: 512,
     });
 
-    const assistantMessage = completion.choices[0]?.message;
+    let assistantMessage = completion.choices[0]?.message;
+    let responseText = assistantMessage?.content || '';
     
+    let lookupResult: TokenData | null = null;
+    let priceResult: TokenData | null = null;
+    let simulationParams: object | null = null;
+
+    // Handle tool calls (existing behavior)
     if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
       groqMessages.push(assistantMessage);
 
@@ -372,7 +407,7 @@ ${JSON.stringify(simulationResult, null, 2)}`,
         });
       }
 
-      // Second call for formatted response
+      // Second call for formatted response after tool execution
       const finalCompletion = await groq.chat.completions.create({
         model: 'llama3-8b-8192',
         messages: groqMessages,
@@ -380,15 +415,91 @@ ${JSON.stringify(simulationResult, null, 2)}`,
         max_tokens: 512,
       });
 
-      return NextResponse.json({
-        response: finalCompletion.choices[0]?.message?.content || 'Unable to process.',
-        simulationParams: null,
-      });
+      responseText = finalCompletion.choices[0]?.message?.content || '';
     }
 
+    // Check for <lookup> tag - fetch token data and ask Groq to interpret
+    const lookupAddress = parseLookupTag(responseText);
+    if (lookupAddress) {
+      lookupResult = await lookupToken(lookupAddress);
+      
+      groqMessages.push({
+        role: 'assistant',
+        content: responseText,
+      });
+      
+      if (lookupResult) {
+        groqMessages.push({
+          role: 'user',
+          content: `Token lookup result: ${lookupResult.symbol} (${lookupResult.name}) on Arbitrum. Price: $${lookupResult.priceUsd.toFixed(4)}. 24h change: ${parseFloat(lookupResult.priceChange24h).toFixed(2)}%. Liquidity: $${(parseFloat(lookupResult.liquidity) / 1e6).toFixed(2)}M. Now tell the user what this token is and ask what they want to do with it.`,
+        });
+      } else {
+        groqMessages.push({
+          role: 'user',
+          content: `Token not found on Arbitrum — tell the user this token has no liquidity on Arbitrum and to double-check the address.`,
+        });
+      }
+      
+      const lookupCompletion = await groq.chat.completions.create({
+        model: 'llama3-8b-8192',
+        messages: groqMessages,
+        temperature: 0.1,
+        max_tokens: 512,
+      });
+      
+      responseText = lookupCompletion.choices[0]?.message?.content || '';
+    }
+
+    // Check for <price> tag - fetch price data and ask Groq to interpret
+    const priceToken = parsePriceTag(responseText);
+    if (priceToken && !lookupAddress) { // Skip if already handled lookup
+      priceResult = await lookupToken(priceToken);
+      
+      groqMessages.push({
+        role: 'assistant',
+        content: responseText,
+      });
+      
+      if (priceResult) {
+        groqMessages.push({
+          role: 'user',
+          content: `Price data for ${priceResult.symbol}: $${priceResult.priceUsd.toFixed(4)}, 24h change: ${parseFloat(priceResult.priceChange24h).toFixed(2)}%, volume: $${(parseFloat(priceResult.volume24h) / 1e6).toFixed(2)}M, liquidity: $${(parseFloat(priceResult.liquidity) / 1e6).toFixed(2)}M. Interpret this naturally for the user.`,
+        });
+      } else {
+        groqMessages.push({
+          role: 'user',
+          content: `I couldn't find live price data for ${priceToken} on Arbitrum. Tell the user this.`,
+        });
+      }
+      
+      const priceCompletion = await groq.chat.completions.create({
+        model: 'llama3-8b-8192',
+        messages: groqMessages,
+        temperature: 0.1,
+        max_tokens: 512,
+      });
+      
+      responseText = priceCompletion.choices[0]?.message?.content || '';
+    }
+
+    // Check for <simulate> tag - parse simulation params (existing behavior)
+    const simulateJson = parseSimulateTag(responseText);
+    if (simulateJson) {
+      try {
+        simulationParams = JSON.parse(simulateJson);
+      } catch {
+        simulationParams = null;
+      }
+    }
+
+    // Strip all tags from final response
+    const cleanResponse = stripAllTags(responseText);
+
     return NextResponse.json({
-      response: assistantMessage?.content || 'Unable to process.',
-      simulationParams: null,
+      response: cleanResponse,
+      simulationParams,
+      lookupResult,
+      priceResult,
     });
 
   } catch (error) {
