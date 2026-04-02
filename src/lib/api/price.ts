@@ -116,13 +116,21 @@ async function lookupByAddress(address: string): Promise<TokenData | null> {
     
     let tokenSymbol: string;
     let tokenName: string;
+    let tokenPriceUsd: number;
     
     if (baseAddr === address) {
+      // Token is base: priceUsd is directly usable
       tokenSymbol = bestPair.baseToken?.symbol || '';
       tokenName = bestPair.baseToken?.name || '';
+      tokenPriceUsd = parseFloat(bestPair.priceUsd) || 0;
     } else if (quoteAddr === address) {
+      // Token is quote: calculate price as 1/priceNative
+      // priceNative = base token price in quote units
+      // So quote token price = 1 / priceNative
       tokenSymbol = bestPair.quoteToken?.symbol || '';
       tokenName = bestPair.quoteToken?.name || '';
+      const priceNative = parseFloat(bestPair.priceNative) || 1;
+      tokenPriceUsd = priceNative > 0 ? (1 / priceNative) * parseFloat(bestPair.priceUsd) : 1;
     } else {
       console.error('Address mismatch after filtering - this should not happen');
       return null;
@@ -137,7 +145,7 @@ async function lookupByAddress(address: string): Promise<TokenData | null> {
       address: address,
       symbol: tokenSymbol,
       name: tokenName,
-      priceUsd: parseFloat(bestPair.priceUsd) || 0,
+      priceUsd: tokenPriceUsd,
       priceChange24h: bestPair.priceChange?.h24 || '0',
       volume24h: bestPair.volume?.h24 || '0',
       liquidity: bestPair.liquidity?.usd || '0',
