@@ -40,6 +40,7 @@ export interface SimulateOutput {
   toAmount: number;
   toAmountUSD: number;
   slippagePercent: number;
+  priceImpact: number;
   gasCostUSD: number;
   netProfitUSD: number;
   lpAPR: number | null;
@@ -150,6 +151,7 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
   let toAmount = 0;
   let toAmountUSD = 0;
   let slippagePercent = 0;
+  let priceImpact = 0;
 
   try {
     fromAmount = input.amountUSD / fromTokenPrice;
@@ -160,12 +162,15 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
         toTokenAddress,
         input.amountUSD,
         fromTokenPrice,
-        toTokenPrice
+        toTokenPrice,
+        fromTokenDisplay,
+        toTokenDisplay
       );
 
       if (quote) {
         toAmount = parseFloat(quote.actualOutput);
         slippagePercent = parseFloat(quote.slippagePercent);
+        priceImpact = parseFloat(quote.priceImpact);
       } else {
         // Fallback calculation using price-based mathematical estimate
         toAmount = input.amountUSD / toTokenPrice;
@@ -389,6 +394,7 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
     toAmount,
     toAmountUSD,
     slippagePercent,
+    priceImpact,
     gasCostUSD,
     netProfitUSD,
     lpAPR,

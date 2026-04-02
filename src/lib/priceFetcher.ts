@@ -153,7 +153,7 @@ export async function fetchDexScreenerPrice(contractAddress: string): Promise<Pr
     
     const pairs = response.data?.pairs;
     if (!pairs || !Array.isArray(pairs) || pairs.length === 0) {
-      return { data: null, error: 'No trading pairs found for this token' };
+      return { data: null, error: 'No reliable market data found for this token on Arbitrum.' };
     }
     
     // 3. Filter valid pairs (immutable)
@@ -162,7 +162,7 @@ export async function fetchDexScreenerPrice(contractAddress: string): Promise<Pr
     if (validPairs.length === 0) {
       return { 
         data: null, 
-        error: `No valid Arbitrum pairs found. Minimum requirements: $${MIN_LIQUIDITY_USD.toLocaleString()} liquidity, $${MIN_VOLUME_24H.toLocaleString()} volume.` 
+        error: 'No reliable market data found for this token on Arbitrum.' 
       };
     }
     
@@ -205,7 +205,7 @@ export async function fetchDexScreenerPrice(contractAddress: string): Promise<Pr
     if (confidence < MIN_CONFIDENCE_THRESHOLD) {
       return { 
         data: null, 
-        error: 'Low confidence market data. Insufficient liquidity.' 
+        error: 'No reliable market data available.' 
       };
     }
     
@@ -226,10 +226,10 @@ export async function fetchDexScreenerPrice(contractAddress: string): Promise<Pr
   } catch (error) {
     if (axios.isAxiosError(error)) {
       console.error('DexScreener API error:', error.message);
-      return { data: null, error: `API error: ${error.message}` };
+      return { data: null, error: 'No reliable market data available.' };
     }
     console.error('Unexpected error in fetchDexScreenerPrice:', error);
-    return { data: null, error: 'Unable to fetch price data' };
+    return { data: null, error: 'No reliable market data available.' };
   }
 }
 

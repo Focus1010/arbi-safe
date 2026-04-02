@@ -39,57 +39,31 @@ function stripAllTags(text: string): string {
     .trim();
 }
 
-// ZERO TRAINING KNOWLEDGE SYSTEM PROMPT
-// The agent MUST NEVER use its training data for token prices, identity, or protocol data
-const SYSTEM_PROMPT = `You are ArbiSafe, an onchain DeFi strategy simulator for Arbitrum. You are direct, sharp, and crypto-native.
+// DEXSCREENER-ONLY SYSTEM PROMPT
+// Hackathon Mode: Minimal, fast, deterministic. NO external data sources.
+const SYSTEM_PROMPT = `You are ArbiSafe, a strict DeFi terminal for Arbitrum. DexScreener is your ONLY source of truth.
 
-CRITICAL RULES — NEVER BREAK THESE:
-1. NEVER state a token price from your training data. You don't know current prices. Always say you'll look it up and trigger the appropriate action.
-2. NEVER identify a contract address from memory. A CA like 0x13040... could be ANY token. Always look it up via DexScreener before making any claims about what it is.
-3. NEVER make up or estimate prices. If data fetch fails, say 'I couldn't fetch live data for that token' — do NOT guess.
-4. When a user gives you a contract address, your ONLY job is to confirm you're looking it up and output a <lookup> tag, not claim to know what it is.
+CRITICAL RULES - BREAKING ANY WILL CAUSE ERRORS:
+- If the user message contains a contract address (0x followed by exactly 40 hex chars), you MUST output ONLY the <lookup> tag. Do not add any other text before or after the tag in that response.
+- NEVER guess or invent a token name, symbol, or description. You know nothing until the lookup tool returns data.
+- Never say "it corresponds to" or make up what the token is.
+- After lookup data is provided in the next turn, then you can describe it using ONLY the returned data.
 
-WHEN USER GIVES A CONTRACT ADDRESS (starts with 0x, 42 chars):
-- Say: 'Let me look up that contract on Arbitrum...'
-- Output at end of response: <lookup>{contractAddress}</lookup>
-- DO NOT say what token you think it is until after lookup data is returned
+EXACT FLOW FOR CA:
+User pastes 0x... → Your response must end with: <lookup>0x...</lookup>
+No other explanation in the first response.
 
-WHEN USER ASKS FOR A TOKEN PRICE:
-- Say: 'Fetching live price from Arbitrum...'  
-- Output at end: <price>{tokenSymbolOrAddress}</price>
-- DO NOT state a price from memory
+For price or strategy questions, use the appropriate tags at the end.
 
-WHEN USER DESCRIBES A STRATEGY:
-- Confirm what you understood
-- Ask for missing info if needed (amount, protocol)
-- When ready: output <simulate>{...json...}</simulate>
+Response style: Short, direct, terminal-like. No fluff.`;
 
-WHEN SIMULATION RESULTS ARE PROVIDED TO YOU:
-- Interpret them confidently and specifically
-- Lead with the key number (how much they get)
-- Comment on slippage and trust score
-- Give a clear verdict: ✅ Proceed / ⚠️ Careful / 🚨 Avoid
-- Be concise — 3-5 sentences max
-
-RESPONSE STYLE:
-- Confirm before acting: 'Got it — doing X now'
-- No corporate speak, no fluff
-- Short sentences
-- No excessive disclaimers (one per session max)
-- Never repeat the same disclaimer twice
-
-TAGS YOU CAN OUTPUT (always at end of response, never mid-sentence):
-<lookup>0x...</lookup> — look up unknown contract address
-<price>TOKEN</price> — fetch live price
-<simulate>{json}</simulate> — run strategy simulation`;
-
-// Tool definitions for Groq - updated for new architecture
+// Tool definitions for Groq - DexScreener ONLY
 const TOOLS: any[] = [
   {
     type: 'function',
     function: {
       name: 'resolveAndPrice',
-      description: 'Resolve token identity via Moralis, then fetch price from DexScreener. Use this for ALL token price queries.',
+      description: 'Fetch token identity and price from DexScreener ONLY. Use this for ALL token price queries.',
       parameters: {
         type: 'object',
         properties: {
@@ -341,6 +315,31 @@ export async function POST(request: NextRequest) {
   try {
     const { messages, simulationResult } = await request.json();
 
+        // AUTO-DETECT RAW CONTRACT ADDRESS (fixes the main bug)
+    const lastUserMessage = messages
+      .filter((m: any) => m.role === 'user')
+      .pop()?.content || '';
+
+    const caMatch = lastUserMessage.match(/0x[a-fA-F0-9]{40}/i);
+    if (caMatch && !simulationResult) {
+      const rawCA = caMatch[0].toLowerCase();
+      console.log('🔍 Auto-detected CA in user message:', rawCA);
+
+      // Force lookup immediately
+      const lookupResult = await lookupToken(rawCA);
+
+      if (lookupResult) {
+        return NextResponse.json({
+          response: `✅ Found on Arbitrum\n\n${lookupResult.symbol} (${lookupResult.name})\nPrice: $${lookupResult.priceUsd.toFixed(6)}\n24h: ${parseFloat(lookupResult.priceChange24h).toFixed(2)}%\nLiq: $${(parseFloat(lookupResult.liquidity) / 1e6).toFixed(2)}M`,
+          lookupResult,
+        });
+      } else {
+        return NextResponse.json({
+          response: "❌ No liquidity found on Arbitrum for this address.\nDouble-check the CA or try a different token.",
+        });
+      }
+    }
+
     if (!Array.isArray(messages)) {
       return NextResponse.json(
         { error: 'Invalid request' },
@@ -418,36 +417,39 @@ export async function POST(request: NextRequest) {
       responseText = finalCompletion.choices[0]?.message?.content || '';
     }
 
-    // Check for <lookup> tag - fetch token data and ask Groq to interpret
-    const lookupAddress = parseLookupTag(responseText);
+    // STRICT LOOKUP FOR CONTRACT ADDRESSES (prevents hallucination)
+    let lookupAddress = parseLookupTag(responseText);
+
+    // Auto-detect raw CA from last user message if no tag
+    if (!lookupAddress) {
+      const lastUserMsg = messages
+        .filter((m: any) => m.role === 'user')
+        .pop()?.content || '';
+      const caMatch = lastUserMsg.match(/0x[a-fA-F0-9]{40}/i);
+      if (caMatch) {
+        lookupAddress = caMatch[0].toLowerCase();
+      }
+    }
+
     if (lookupAddress) {
       lookupResult = await lookupToken(lookupAddress);
-      
-      groqMessages.push({
-        role: 'assistant',
-        content: responseText,
-      });
-      
-      if (lookupResult) {
-        groqMessages.push({
-          role: 'user',
-          content: `Token lookup result: ${lookupResult.symbol} (${lookupResult.name}) on Arbitrum. Price: $${lookupResult.priceUsd.toFixed(4)}. 24h change: ${parseFloat(lookupResult.priceChange24h).toFixed(2)}%. Liquidity: $${(parseFloat(lookupResult.liquidity) / 1e6).toFixed(2)}M. Now tell the user what this token is and ask what they want to do with it.`,
-        });
-      } else {
-        groqMessages.push({
-          role: 'user',
-          content: `Token not found on Arbitrum — tell the user this token has no liquidity on Arbitrum and to double-check the address.`,
-        });
-      }
-      
+
+      // Force a very strict interpretation prompt
+      const interpretationPrompt = lookupResult 
+        ? `You have real DexScreener data for address ${lookupAddress}:\n\nSymbol: ${lookupResult.symbol}\nName: ${lookupResult.name}\nPrice: $${lookupResult.priceUsd.toFixed(6)}\n24h change: ${parseFloat(lookupResult.priceChange24h).toFixed(2)}%\nLiquidity: $${(parseFloat(lookupResult.liquidity)/1e6).toFixed(2)}M\nVolume 24h: $${(parseFloat(lookupResult.volume24h)/1e6).toFixed(2)}M\n\nRespond with ONLY these facts. Do not invent any other name, description, or token identity. Tell the user the real symbol and name, then ask what they want to do (swap, LP, etc.). Be short.`
+        : `No liquidity or pair found on Arbitrum for ${lookupAddress}. Tell the user exactly that and suggest double-checking the address.`;
+
+      groqMessages.push({ role: 'assistant', content: responseText });
+      groqMessages.push({ role: 'user', content: interpretationPrompt });
+
       const lookupCompletion = await groq.chat.completions.create({
         model: 'llama3-8b-8192',
         messages: groqMessages,
-        temperature: 0.1,
-        max_tokens: 512,
+        temperature: 0.0,   // <-- Lower temperature = less creativity
+        max_tokens: 300,
       });
-      
-      responseText = lookupCompletion.choices[0]?.message?.content || '';
+
+      responseText = lookupCompletion.choices[0]?.message?.content || 'Lookup completed.';
     }
 
     // Check for <price> tag - fetch price data and ask Groq to interpret
