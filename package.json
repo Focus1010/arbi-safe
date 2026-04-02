@@ -13,6 +13,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@moralisweb3/common-evm-utils": "^2.26.9",
+    "@moralisweb3/next": "^2.26.9",
     "@next/swc-wasm-nodejs": "^16.2.2",
     "@types/html2canvas": "^0.5.35",
     "@vercel/analytics": "^2.0.1",
