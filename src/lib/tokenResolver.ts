@@ -136,7 +136,7 @@ async function resolveByAddress(address: string): Promise<ResolveResult> {
       address: address,
       symbol: metadata.symbol,
       name: metadata.name || metadata.symbol,
-      decimals: metadata.decimals || 18,
+      decimals: typeof metadata.decimals === 'number' ? metadata.decimals : 18,
       chainId: 42161,
       source: 'moralis',
       verified: true,

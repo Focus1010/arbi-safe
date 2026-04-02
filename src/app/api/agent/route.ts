@@ -2,51 +2,47 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { resolveToken } from '@/lib/tokenResolver';
 import { fetchDexScreenerPrice, fetchTopMovers, fetchMarketOverview } from '@/lib/priceFetcher';
-import { getGasEstimate } from '@/lib/api/gas';
+import { getGasData, simulateSwap, simulateLP } from '@/lib/alchemy';
 import { getTrustScore } from '@/lib/api/trust';
 import { simulateStrategy } from '@/lib/simulate';
+import { parseInput, formatParsedInput } from '@/lib/inputParser';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ZERO TOLERANCE SYSTEM PROMPT - DO NOT DEVIATE
-const SYSTEM_PROMPT = `You are ArbiSafe. A live, sharp, confident DeFi terminal for Arbitrum. You speak fast, bold, and fact-only.
+// CONTROLLED REASONING SYSTEM PROMPT
+// Brief reasoning allowed, then facts only
+const SYSTEM_PROMPT = `You are ArbiSafe. A sharp, live DeFi terminal for Arbitrum.
 
-ABSOLUTE RULES - BREAK NONE:
-1. ONLY state what the tools return. NO guessing. NO "I think". NO "maybe". NO "probably". NO "looks like". NO "it seems".
-2. If tools fail or return null: say exactly "Unable to verify this token with high confidence." Then stop.
-3. NEVER explain your reasoning. NEVER say "Let me check..." or "I'll look that up..." Just give the result.
-4. NEVER use emojis in the terminal output. Keep it raw and clean.
-5. NEVER correct yourself. One shot. Wrong data? Too bad - that's what the tool said.
-6. Terminal style = BOLD, DENSE, NO FLUFF. Every word earns its place.
+DATA FLOW (you MUST follow this):
+1. User asks question
+2. You call tools to get data (Moralis for identity, DexScreener for prices, Alchemy for gas)
+3. You respond with brief context (1 line) + clean data output
 
-FORBIDDEN PHRASES (never say these):
-- "I think"
-- "maybe"
-- "possibly"
-- "wait"
-- "actually"
-- "let me"
-- "I'll"
-- "it appears"
-- "it looks like"
-- "I believe"
-- "could be"
-- "might be"
+RULES:
+- Brief reasoning OK: "Fetching ARB price..." or "Comparing tokens..."
+- Then: RAW DATA ONLY
+- NO guessing, NO "I think", NO "maybe", NO speculation
+- NO long explanations
+- NO self-corrections
+- If tools fail: "Unable to verify this token with high confidence."
 
-CORRECT OUTPUT FORMAT:
----
-GMX (Arbitrum)
-Price: $45.23
+FORBIDDEN (never say):
+- "I think" / "maybe" / "possibly" / "probably"
+- "wait" / "actually" / "let me" / "I'll"
+- "it appears" / "it looks like" / "I believe"
+- "could be" / "might be"
+
+CORRECT OUTPUT:
+Fetching ARB price...
+ARB (Arbitrum)
+Price: $1.23
 Liquidity: $12.4M
 24h: +3.2%
 
-Verdict: PROCEED
----
+WRONG OUTPUT:
+"I think ARB is probably around $1.20, let me check that for you... Actually it looks like $1.23 based on what I'm seeing."
 
-WRONG OUTPUT (never do this):
-"I think GMX is trading around $45, maybe $46. Let me check..."
-
-BE SHARP. BE FAST. BE RIGHT. OR SAY NOTHING.`;
+BE BRIEF. BE FACTUAL. BE USEFUL.`;
 
 // Tool definitions for Groq - updated for new architecture
 const TOOLS: any[] = [
@@ -105,6 +101,38 @@ const TOOLS: any[] = [
           protocol: { type: 'string', description: 'Protocol name' }
         },
         required: ['fromToken', 'toToken', 'amountUSD', 'action', 'protocol']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'simulateSwap',
+      description: 'Simulate a token swap with real gas estimates from Alchemy',
+      parameters: {
+        type: 'object',
+        properties: {
+          fromToken: { type: 'string', description: 'Token to swap from (symbol or address)' },
+          toToken: { type: 'string', description: 'Token to swap to (symbol or address)' },
+          amountUSD: { type: 'number', description: 'Amount in USD to swap' }
+        },
+        required: ['fromToken', 'toToken', 'amountUSD']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'simulateLP',
+      description: 'Simulate a liquidity pool position',
+      parameters: {
+        type: 'object',
+        properties: {
+          tokenA: { type: 'string', description: 'First token (symbol or address)' },
+          tokenB: { type: 'string', description: 'Second token (symbol or address)' },
+          amountUSD: { type: 'number', description: 'Total USD amount to provide as liquidity' }
+        },
+        required: ['tokenA', 'tokenB', 'amountUSD']
       }
     }
   },
@@ -234,14 +262,20 @@ async function executeTool(name: string, args: any) {
       case 'compareTokens':
         return await compareTokens(args.tokenA, args.tokenB);
       case 'checkGasFees':
-        const gasResult = await getGasEstimate();
+        const gasData = await getGasData();
         return { 
-          data: gasResult ? {
-            gasPriceGwei: gasResult.gasPriceGwei,
-            estimatedCostUSD: parseFloat(gasResult.estimatedSwapCostUsd)
+          data: gasData ? {
+            gasPriceGwei: gasData.gasPriceGwei,
+            estimatedCostUSD: parseFloat(gasData.estimatedSwapCostUsd)
           } : null, 
-          error: gasResult ? null : 'Unable to fetch gas fees.' 
+          error: gasData ? null : 'Unable to fetch gas fees.' 
         };
+      case 'simulateSwap':
+        const swapResult = await simulateSwap(args.fromToken, args.toToken, args.amountUSD);
+        return { data: swapResult, error: swapResult ? null : 'Simulation failed.' };
+      case 'simulateLP':
+        const lpResult = await simulateLP(args.tokenA, args.tokenB, args.amountUSD);
+        return { data: lpResult, error: lpResult ? null : 'LP simulation failed.' };
       case 'simulateStrategy':
         const result = await simulateStrategy(args);
         return { data: result, error: null };
