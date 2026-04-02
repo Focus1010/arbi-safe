@@ -1,26 +1,166 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
+import { parseCommand, COMMANDS_HELP } from '@/lib/commandParser';
+import {
+  checkTokenPrice,
+  compareTokens,
+  checkProtocolSafety,
+  checkGasFees,
+  getPoolInfo,
+  getArbitrumMarketOverview,
+  getTopGainers,
+  getTopLosers,
+} from '@/lib/agentTools';
+import { simulateStrategy } from '@/lib/simulate';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `You are ArbiSafe, an expert DeFi strategy simulator agent on Arbitrum. You help users simulate and evaluate DeFi strategies before they execute them with real money.
+const SYSTEM_PROMPT = `You are ArbiSafe, an expert AI agent for simulating DeFi strategies on Arbitrum. You're sharp, direct, and speak like a knowledgeable crypto-native friend — not a corporate chatbot.
 
-You have access to real onchain data. When a user describes a strategy, extract these parameters:
-- fromToken (USDC, USDT, or WETH)
-- toToken (ARB, WETH, GMX)  
-- amountUSD (number)
-- action (swap or lp)
-- protocol (camelot, gmx, uniswap, aave)
+You have access to real-time Arbitrum data through function calls. When users need information, call the appropriate function rather than making up data.
 
-When you have enough information, output a special JSON block at the END of your response in this exact format:
-<simulate>
-{"fromToken":"USDC","toToken":"ARB","amountUSD":200,"action":"swap","protocol":"camelot"}
-</simulate>
+AVAILABLE FUNCTIONS:
+- checkTokenPrice(token): Get price, volume, liquidity for any token
+- compareTokens(tokenA, tokenB): Side-by-side comparison
+- checkGasFees(): Current gas prices and costs
+- checkProtocolSafety(protocol): Trust score and safety analysis
+- getPoolInfo(tokenA, tokenB): Liquidity pool details
+- getArbitrumMarketOverview(): Top tokens and market sentiment
+- getTopGainers(): Biggest positive movers
+- getTopLosers(): Biggest drops
+- simulateStrategy(params): Run a swap or LP simulation
 
-If you don't have enough info yet, ask the user for the missing details in a friendly conversational way.
+SLASH COMMANDS users can type:
+/help - Show all commands
+/price {token} - Get token price
+/compare {A} {B} - Compare tokens
+/gas - Check gas fees
+/safe {protocol} - Check protocol safety
+/pool {A} {B} - Pool info
+/market - Market overview
+/gainers - Top gainers
+/losers - Top losers
+/simulate {from} {to} {amount} - Direct simulation
+/lp {from} {to} {amount} - LP simulation
+/clear - Clear chat
 
-Always be concise, use emojis sparingly, and speak like a knowledgeable DeFi friend — not a robot. 
-After a simulation runs, interpret the results for the user in plain English. Highlight risks, opportunities, and give a clear recommendation: proceed, proceed with caution, or avoid.`;
+When you call a function, wait for the results then interpret them naturally for the user. Be concise but informative.
+
+For simulations, extract parameters and call simulateStrategy with:
+- fromToken, toToken, amountUSD, action ('swap' or 'lp'), protocol ('camelot', 'gmx', etc.)
+
+Always end with a clear verdict when presenting data.
+Never make up prices or data - always use function results.`;
+
+// Function definitions for Groq
+const FUNCTIONS = [
+  {
+    name: 'checkTokenPrice',
+    description: 'Get real-time price, volume, and liquidity for any token on Arbitrum',
+    parameters: {
+      type: 'object',
+      properties: {
+        token: { type: 'string', description: 'Token ticker (e.g., USDC, ARB) or contract address (0x...)' }
+      },
+      required: ['token']
+    }
+  },
+  {
+    name: 'compareTokens',
+    description: 'Compare two tokens side by side with prices, volumes, and liquidity',
+    parameters: {
+      type: 'object',
+      properties: {
+        tokenA: { type: 'string', description: 'First token ticker or CA' },
+        tokenB: { type: 'string', description: 'Second token ticker or CA' }
+      },
+      required: ['tokenA', 'tokenB']
+    }
+  },
+  {
+    name: 'checkGasFees',
+    description: 'Get current Arbitrum gas prices and estimated transaction costs',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'checkProtocolSafety',
+    description: 'Check trust score and safety metrics for a DeFi protocol',
+    parameters: {
+      type: 'object',
+      properties: {
+        protocol: { type: 'string', description: 'Protocol name (e.g., Camelot, GMX, Aave)' }
+      },
+      required: ['protocol']
+    }
+  },
+  {
+    name: 'getPoolInfo',
+    description: 'Get liquidity pool information for a token pair',
+    parameters: {
+      type: 'object',
+      properties: {
+        tokenA: { type: 'string', description: 'First token in the pair' },
+        tokenB: { type: 'string', description: 'Second token in the pair' }
+      },
+      required: ['tokenA', 'tokenB']
+    }
+  },
+  {
+    name: 'getArbitrumMarketOverview',
+    description: 'Get top tokens by volume and overall market sentiment',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'getTopGainers',
+    description: 'Get the top 5 tokens with the biggest price increases',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'getTopLosers',
+    description: 'Get the top 5 tokens with the biggest price drops',
+    parameters: { type: 'object', properties: {} }
+  },
+  {
+    name: 'simulateStrategy',
+    description: 'Run a DeFi strategy simulation (swap or LP) with real onchain data',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromToken: { type: 'string', description: 'Token to swap from' },
+        toToken: { type: 'string', description: 'Token to swap to' },
+        amountUSD: { type: 'number', description: 'Amount in USD to simulate' },
+        action: { type: 'string', enum: ['swap', 'lp'], description: 'Type of strategy' },
+        protocol: { type: 'string', description: 'Protocol to use (camelot, gmx, uniswap, aave)' }
+      },
+      required: ['fromToken', 'toToken', 'amountUSD', 'action', 'protocol']
+    }
+  }
+];
+
+async function executeFunction(name: string, args: any) {
+  switch (name) {
+    case 'checkTokenPrice':
+      return await checkTokenPrice(args.token);
+    case 'compareTokens':
+      return await compareTokens(args.tokenA, args.tokenB);
+    case 'checkGasFees':
+      return await checkGasFees();
+    case 'checkProtocolSafety':
+      return await checkProtocolSafety(args.protocol);
+    case 'getPoolInfo':
+      return await getPoolInfo(args.tokenA, args.tokenB);
+    case 'getArbitrumMarketOverview':
+      return await getArbitrumMarketOverview();
+    case 'getTopGainers':
+      return await getTopGainers();
+    case 'getTopLosers':
+      return await getTopLosers();
+    case 'simulateStrategy':
+      return { data: await simulateStrategy(args), error: null };
+    default:
+      return { data: null, error: 'Unknown function' };
+  }
+} 
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,7 +189,7 @@ ${JSON.stringify(simulationResult, null, 2)}`,
     }
 
     const completion = await groq.chat.completions.create({
-      model: 'llama3-70b-8192',
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
       messages: groqMessages,
       temperature: 0.7,
       max_tokens: 1024,

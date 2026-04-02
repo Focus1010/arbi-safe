@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { parseCommand, COMMANDS_HELP } from '@/lib/commandParser';
+import CommandResults from '@/components/CommandResults';
 
 interface SimulationResult {
   fromToken: string;
@@ -51,10 +53,11 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hey! I'm ArbiSafe 🛡️ — your onchain strategy simulator for Arbitrum. Tell me what you want to do and I'll run the real numbers before you risk a dollar.\n\nYou can drop a ticker, a contract address, or just describe your move.",
+      content: "Hey! I'm ArbiSafe 🛡️ — your onchain strategy simulator for Arbitrum. Tell me what you want to do and I'll run the real numbers before you risk a dollar.\n\nType / to see available commands, or just chat naturally.",
     },
   ]);
   const [inputValue, setInputValue] = useState('');
+  const [showCommandAutocomplete, setShowCommandAutocomplete] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [showChips, setShowChips] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -75,11 +78,73 @@ export default function Home() {
 
     setInputValue('');
     setShowChips(false);
+    setShowCommandAutocomplete(false);
     
     const newMessages: Message[] = [...messages, { role: 'user', content: textToSend }];
     setMessages(newMessages);
     setIsThinking(true);
 
+    // Check if this is a command
+    const command = parseCommand(textToSend);
+
+    // Handle /clear command
+    if (command.command === 'clear') {
+      setMessages([{
+        role: 'assistant',
+        content: "Hey! I'm ArbiSafe 🛡️ — your onchain strategy simulator for Arbitrum. Tell me what you want to do and I'll run the real numbers before you risk a dollar.\n\nType / to see available commands, or just chat naturally.",
+      }]);
+      setIsThinking(false);
+      return;
+    }
+
+    // Handle unknown command
+    if (command.command === 'unknown') {
+      setMessages([
+        ...newMessages,
+        { role: 'assistant', content: "I don't recognize that command. Type /help to see what I can do 👾" },
+      ]);
+      setIsThinking(false);
+      return;
+    }
+
+    // Handle valid commands (not null, not unknown, not clear)
+    if (command.command !== null) {
+      try {
+        const response = await fetch('/api/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            command: command.command, 
+            params: command 
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Command failed');
+        }
+
+        const data = await response.json();
+        
+        // Add command result as a special message
+        const commandMessage: Message = {
+          role: 'assistant',
+          content: `COMMAND_RESULT:${JSON.stringify({ type: data.type, data: data.data })}`,
+        };
+        
+        setMessages([...newMessages, commandMessage]);
+      } catch (err) {
+        console.error('Command error:', err);
+        setMessages([
+          ...newMessages,
+          { role: 'assistant', content: "Sorry, I couldn't process that command. Try again in a moment 🔄" },
+        ]);
+      } finally {
+        setIsThinking(false);
+      }
+      return;
+    }
+
+    // Normal agent chat flow for non-commands
     try {
       // First call to agent
       const response = await fetch('/api/agent', {
@@ -132,7 +197,7 @@ export default function Home() {
       console.error('Agent error:', err);
       setMessages([
         ...newMessages,
-        { role: 'assistant', content: "Sorry, I hit a snag fetching that data. Try again in a moment �" },
+        { role: 'assistant', content: "Sorry, I hit a snag fetching that data. Try again in a moment 🔄" },
       ]);
     } finally {
       setIsThinking(false);
@@ -223,7 +288,20 @@ export default function Home() {
                 whiteSpace: 'pre-wrap'
               }}
             >
-              {msg.content}
+              {/* Check for command results */}
+              {msg.content.startsWith('COMMAND_RESULT:') ? (
+                (() => {
+                  try {
+                    const resultStr = msg.content.slice('COMMAND_RESULT:'.length);
+                    const result = JSON.parse(resultStr);
+                    return <CommandResults type={result.type} data={result.data} />;
+                  } catch {
+                    return msg.content;
+                  }
+                })()
+              ) : (
+                msg.content
+              )}
               
               {/* Simulation Result Card */}
               {msg.simulationResult && (
@@ -249,7 +327,7 @@ export default function Home() {
           {[
             'Swap $200 USDC → ARB on Camelot',
             'LP $500 USDC/WETH on Camelot',
-            'Is it safe to put $5000 into GMX?'
+            '/price ARB'
           ].map((chip, i) => (
             <button
               key={i}
@@ -317,48 +395,116 @@ export default function Home() {
       </div>
 
       {/* INPUT BAR */}
-      <div 
-        className="flex items-center gap-2 flex-shrink-0"
-        style={{ 
-          height: '56px',
-          backgroundColor: '#0d0d16', 
-          borderTop: '0.5px solid #1a1a2a',
-          padding: '10px 14px'
-        }}
-      >
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Ask ArbiSafe about your strategy..."
-          className="flex-1"
-          style={{
-            backgroundColor: '#12121f',
-            border: '0.5px solid #2a2a4a',
-            color: '#c8c8d8',
-            borderRadius: '20px',
-            padding: '8px 16px',
-            fontSize: '13px',
-            outline: 'none'
-          }}
-        />
-        <button
-          onClick={() => handleSend()}
-          disabled={!inputValue.trim() || isThinking}
-          style={{
-            backgroundColor: '#3b82f6',
-            color: '#ffffff',
-            borderRadius: '20px',
-            padding: '8px 18px',
-            fontSize: '13px',
-            cursor: inputValue.trim() && !isThinking ? 'pointer' : 'not-allowed',
-            opacity: inputValue.trim() && !isThinking ? 1 : 0.5,
-            border: 'none'
+      <div className="relative flex-shrink-0">
+        {/* Command Autocomplete Dropdown */}
+        {showCommandAutocomplete && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '60px',
+              left: '14px',
+              right: '14px',
+              backgroundColor: '#0e0e1e',
+              border: '0.5px solid #2a2a4a',
+              borderRadius: '8px',
+              maxHeight: '200px',
+              overflowY: 'auto',
+              zIndex: 10,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            }}
+          >
+            {COMMANDS_HELP.map((cmd, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  setInputValue(cmd.command.split(' ')[0] + ' ');
+                  setShowCommandAutocomplete(false);
+                }}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  width: '100%',
+                  padding: '8px 12px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  borderBottom: i < COMMANDS_HELP.length - 1 ? '0.5px solid #1a1a2a' : 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#1a1a2e';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
+                <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#3b82f6' }}>
+                  {cmd.command}
+                </span>
+                <span style={{ fontSize: '11px', color: '#6a6a8a' }}>
+                  {cmd.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div 
+          className="flex items-center gap-2"
+          style={{ 
+            height: '56px',
+            backgroundColor: '#0d0d16', 
+            borderTop: '0.5px solid #1a1a2a',
+            padding: '10px 14px'
           }}
         >
-          Send
-        </button>
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => {
+              const value = e.target.value;
+              setInputValue(value);
+              // Show autocomplete when typing "/"
+              if (value === '/') {
+                setShowCommandAutocomplete(true);
+              } else if (!value.startsWith('/')) {
+                setShowCommandAutocomplete(false);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setShowCommandAutocomplete(false);
+              }
+              handleKeyPress(e);
+            }}
+            placeholder="Ask ArbiSafe about your strategy..."
+            className="flex-1"
+            style={{
+              backgroundColor: '#12121f',
+              border: '0.5px solid #2a2a4a',
+              color: '#c8c8d8',
+              borderRadius: '20px',
+              padding: '8px 16px',
+              fontSize: '13px',
+              outline: 'none'
+            }}
+          />
+          <button
+            onClick={() => handleSend()}
+            disabled={!inputValue.trim() || isThinking}
+            style={{
+              backgroundColor: '#3b82f6',
+              color: '#ffffff',
+              borderRadius: '20px',
+              padding: '8px 18px',
+              fontSize: '13px',
+              cursor: inputValue.trim() && !isThinking ? 'pointer' : 'not-allowed',
+              opacity: inputValue.trim() && !isThinking ? 1 : 0.5,
+              border: 'none'
+            }}
+          >
+            Send
+          </button>
+        </div>
       </div>
 
       {/* FULL REPORT MODAL */}
