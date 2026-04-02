@@ -263,8 +263,11 @@ export default function Home() {
           
           {/* CHAT AREA */}
           <div 
-            className="flex-1 overflow-y-auto"
-            style={{ padding: '12px 16px' }}
+            className="flex-1 overflow-y-auto custom-scrollbar"
+            style={{ 
+              padding: '12px 16px',
+              overflowX: 'hidden',
+            }}
           >
             {messages.map((msg, idx) => (
               <div
@@ -300,13 +303,14 @@ export default function Home() {
 
                 {/* Message */}
                 <div
-                  className="flex flex-col"
+                  className="flex flex-col overflow-hidden"
                   style={{
                     maxWidth: 'calc(100% - 30px)',
                     backgroundColor: msg.role === 'user' ? 'transparent' : colors.surface,
                     border: msg.role === 'user' ? 'none' : `1px solid ${colors.border}`,
                     borderRadius: '4px',
                     padding: msg.role === 'user' ? '4px 0' : '8px 10px',
+                    wordBreak: 'break-word',
                   }}
                 >
                   {msg.content.startsWith('COMMAND_RESULT:') ? (
@@ -319,13 +323,29 @@ export default function Home() {
                         return <span style={{ color: colors.text, fontSize: '13px', fontWeight: 500, lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{msg.content}</span>;
                       }
                     })()
+                  ) : msg.content.includes('COMMAND_RESULT:') ? (
+                    // Hide COMMAND_RESULT JSON that appears in agent responses
+                    (() => {
+                      const cleanContent = msg.content.split('COMMAND_RESULT:')[0].trim();
+                      return (
+                        <span style={{ 
+                          color: msg.role === 'user' ? colors.text : colors.textMuted, 
+                          fontSize: '13px', 
+                          fontWeight: msg.role === 'user' ? 600 : 500,
+                          lineHeight: 1.4,
+                          whiteSpace: 'pre-wrap',
+                        }}>
+                          {cleanContent}
+                        </span>
+                      );
+                    })()
                   ) : (
                     <span style={{ 
                       color: msg.role === 'user' ? colors.text : colors.textMuted, 
                       fontSize: '13px', 
                       fontWeight: msg.role === 'user' ? 600 : 500,
                       lineHeight: 1.4,
-                      whiteSpace: 'pre-wrap'
+                      whiteSpace: 'pre-wrap',
                     }}>
                       {msg.content}
                     </span>
