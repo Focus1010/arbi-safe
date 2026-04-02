@@ -1,4 +1,4 @@
-# 🛡️ ArbiSafe
+# ArbiSafe
 
 > Simulate before you ape.
 
