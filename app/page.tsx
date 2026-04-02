@@ -45,10 +45,24 @@ interface SimulationResult {
   } | null;
 }
 
+interface TokenPriceData {
+  address: string;
+  symbol: string;
+  name: string;
+  priceUsd: number;
+  priceChange24h: string;
+  volume24h: string;
+  liquidity: string;
+  pairAddress: string;
+  dexId: string;
+}
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   simulationResult?: SimulationResult;
+  lookupResult?: TokenPriceData;
+  priceResult?: TokenPriceData;
 }
 
 const colors = {
@@ -81,8 +95,12 @@ export default function Home() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalData, setModalData] = useState<SimulationResult | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -100,6 +118,7 @@ export default function Home() {
     
     const newMessages: Message[] = [...messages, { role: 'user', content: textToSend }];
     setMessages(newMessages);
+    scrollToBottom();
     setIsThinking(true);
 
     const command = parseCommand(textToSend);
@@ -172,6 +191,35 @@ export default function Home() {
       }
 
       const data = await response.json();
+      
+      // Handle lookupResult - render price card inline
+      if (data.lookupResult) {
+        const lookupMsg: Message = {
+          role: 'assistant',
+          content: data.response,
+          lookupResult: data.lookupResult,
+        };
+        const finalMessages: Message[] = [...newMessages, lookupMsg];
+        setMessages(finalMessages);
+        scrollToBottom();
+        setIsThinking(false);
+        return;
+      }
+      
+      // Handle priceResult - render price card inline
+      if (data.priceResult) {
+        const priceMsg: Message = {
+          role: 'assistant',
+          content: data.response,
+          priceResult: data.priceResult,
+        };
+        const finalMessages: Message[] = [...newMessages, priceMsg];
+        setMessages(finalMessages);
+        scrollToBottom();
+        setIsThinking(false);
+        return;
+      }
+      
       let finalMessages: Message[] = [...newMessages, { role: 'assistant', content: data.response }];
 
       if (data.simulationParams) {
@@ -205,6 +253,7 @@ export default function Home() {
       }
 
       setMessages(finalMessages);
+      scrollToBottom();
     } catch (err) {
       console.error('Agent error:', err);
       setMessages([
@@ -213,6 +262,7 @@ export default function Home() {
       ]);
     } finally {
       setIsThinking(false);
+      scrollToBottom();
     }
   };
 
@@ -263,6 +313,7 @@ export default function Home() {
           
           {/* CHAT AREA */}
           <div 
+            ref={chatContainerRef}
             className="flex-1 overflow-y-auto custom-scrollbar"
             style={{ 
               padding: '12px 16px',
@@ -356,6 +407,45 @@ export default function Home() {
                       data={msg.simulationResult} 
                       onOpenModal={() => openModal(msg.simulationResult!)} 
                     />
+                  )}
+                  
+                  {(msg.lookupResult || msg.priceResult) && (
+                    <div style={{ marginTop: '8px', padding: '8px 10px', backgroundColor: colors.surfaceHover, borderRadius: '4px', border: `1px solid ${colors.border}` }}>
+                      {(() => {
+                        const token = msg.lookupResult || msg.priceResult;
+                        if (!token) return null;
+                        const change = parseFloat(token.priceChange24h);
+                        const changeColor = change >= 0 ? colors.green : colors.red;
+                        const changeSign = change >= 0 ? '+' : '';
+                        return (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <span style={{ color: colors.text, fontSize: '13px', fontWeight: 600 }}>
+                                {token.symbol} ({token.name})
+                              </span>
+                              <span style={{ color: colors.text, fontSize: '13px', fontWeight: 600 }}>
+                                ${token.priceUsd.toFixed(4)}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: colors.textMuted }}>
+                              <span>24h: <span style={{ color: changeColor }}>{changeSign}{change.toFixed(2)}%</span></span>
+                              <span>Vol: ${(parseFloat(token.volume24h) / 1e6).toFixed(2)}M</span>
+                              <span>Liq: ${(parseFloat(token.liquidity) / 1e6).toFixed(2)}M</span>
+                            </div>
+                            <div style={{ marginTop: '4px' }}>
+                              <a 
+                                href={`https://dexscreener.com/arbitrum/${token.pairAddress}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: colors.accent, fontSize: '11px', textDecoration: 'none' }}
+                              >
+                                View on DexScreener →
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   )}
                 </div>
               </div>

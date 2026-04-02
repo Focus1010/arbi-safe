@@ -77,6 +77,7 @@ async function lookupByAddress(address: string): Promise<TokenData | null> {
     }
 
     // Filter Arbitrum pairs where the queried address is actually in the pair
+    // PRIORITY: Pairs where queried token is BASE (so priceUsd is correct)
     const arbitrumPairs = pairs.filter((p: any) => {
       if (p.chainId !== 'arbitrum') return false;
       
@@ -91,10 +92,19 @@ async function lookupByAddress(address: string): Promise<TokenData | null> {
       return null;
     }
 
-    // Sort by liquidity to get most reliable pair
-    const sortedPairs = arbitrumPairs.sort((a: any, b: any) => 
-      (parseFloat(b.liquidity?.usd || 0) - parseFloat(a.liquidity?.usd || 0))
-    );
+    // Sort: prioritize pairs where queried token is BASE (priceUsd is directly usable)
+    // Then by liquidity
+    const sortedPairs = arbitrumPairs.sort((a: any, b: any) => {
+      const aBase = a.baseToken?.address?.toLowerCase() === address;
+      const bBase = b.baseToken?.address?.toLowerCase() === address;
+      
+      // Prioritize base token matches
+      if (aBase && !bBase) return -1;
+      if (!aBase && bBase) return 1;
+      
+      // Then sort by liquidity
+      return parseFloat(b.liquidity?.usd || 0) - parseFloat(a.liquidity?.usd || 0);
+    });
 
     const bestPair = sortedPairs[0];
     const liquidity = parseFloat(bestPair.liquidity?.usd || 0);
