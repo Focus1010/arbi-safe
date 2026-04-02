@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
-import { parseCommand, COMMANDS_HELP } from '@/lib/commandParser';
 import {
   checkTokenPrice,
   compareTokens,
@@ -15,152 +14,159 @@ import { simulateStrategy } from '@/lib/simulate';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `You are ArbiSafe, an expert AI agent for simulating DeFi strategies on Arbitrum. You're sharp, direct, and speak like a knowledgeable crypto-native friend — not a corporate chatbot.
+const SYSTEM_PROMPT = `You are ArbiSafe, an expert AI agent for simulating DeFi strategies on Arbitrum. You're sharp, direct, and speak like a knowledgeable crypto-native friend.
 
-You have access to real-time Arbitrum data through function calls. When users need information, call the appropriate function rather than making up data.
+When a user asks about buying or swapping tokens, or wants to simulate a strategy:
+1. First check the token price to see if it has enough liquidity
+2. Check gas fees to give accurate cost estimates  
+3. If the user mentions an amount, call simulateStrategy with the appropriate parameters
 
-AVAILABLE FUNCTIONS:
-- checkTokenPrice(token): Get price, volume, liquidity for any token
-- compareTokens(tokenA, tokenB): Side-by-side comparison
-- checkGasFees(): Current gas prices and costs
-- checkProtocolSafety(protocol): Trust score and safety analysis
-- getPoolInfo(tokenA, tokenB): Liquidity pool details
-- getArbitrumMarketOverview(): Top tokens and market sentiment
-- getTopGainers(): Biggest positive movers
-- getTopLosers(): Biggest drops
-- simulateStrategy(params): Run a swap or LP simulation
+Always use the available tools/functions rather than making up data. Be concise and give clear verdicts.`;
 
-SLASH COMMANDS users can type:
-/help - Show all commands
-/price {token} - Get token price
-/compare {A} {B} - Compare tokens
-/gas - Check gas fees
-/safe {protocol} - Check protocol safety
-/pool {A} {B} - Pool info
-/market - Market overview
-/gainers - Top gainers
-/losers - Top losers
-/simulate {from} {to} {amount} - Direct simulation
-/lp {from} {to} {amount} - LP simulation
-/clear - Clear chat
-
-When you call a function, wait for the results then interpret them naturally for the user. Be concise but informative.
-
-For simulations, extract parameters and call simulateStrategy with:
-- fromToken, toToken, amountUSD, action ('swap' or 'lp'), protocol ('camelot', 'gmx', etc.)
-
-Always end with a clear verdict when presenting data.
-Never make up prices or data - always use function results.`;
-
-// Function definitions for Groq
-const FUNCTIONS = [
+// Tool definitions for Groq
+const TOOLS: any[] = [
   {
-    name: 'checkTokenPrice',
-    description: 'Get real-time price, volume, and liquidity for any token on Arbitrum',
-    parameters: {
-      type: 'object',
-      properties: {
-        token: { type: 'string', description: 'Token ticker (e.g., USDC, ARB) or contract address (0x...)' }
-      },
-      required: ['token']
+    type: 'function',
+    function: {
+      name: 'checkTokenPrice',
+      description: 'Get real-time price, volume, and liquidity for any token on Arbitrum',
+      parameters: {
+        type: 'object',
+        properties: {
+          token: { type: 'string', description: 'Token ticker (e.g., USDC, ARB, GMX) or contract address (0x...)' }
+        },
+        required: ['token']
+      }
     }
   },
   {
-    name: 'compareTokens',
-    description: 'Compare two tokens side by side with prices, volumes, and liquidity',
-    parameters: {
-      type: 'object',
-      properties: {
-        tokenA: { type: 'string', description: 'First token ticker or CA' },
-        tokenB: { type: 'string', description: 'Second token ticker or CA' }
-      },
-      required: ['tokenA', 'tokenB']
+    type: 'function',
+    function: {
+      name: 'checkGasFees',
+      description: 'Get current Arbitrum gas prices and estimated transaction costs',
+      parameters: { type: 'object', properties: {} }
     }
   },
   {
-    name: 'checkGasFees',
-    description: 'Get current Arbitrum gas prices and estimated transaction costs',
-    parameters: { type: 'object', properties: {} }
-  },
-  {
-    name: 'checkProtocolSafety',
-    description: 'Check trust score and safety metrics for a DeFi protocol',
-    parameters: {
-      type: 'object',
-      properties: {
-        protocol: { type: 'string', description: 'Protocol name (e.g., Camelot, GMX, Aave)' }
-      },
-      required: ['protocol']
+    type: 'function',
+    function: {
+      name: 'simulateStrategy',
+      description: 'Run a DeFi strategy simulation (swap or LP) with real onchain data',
+      parameters: {
+        type: 'object',
+        properties: {
+          fromToken: { type: 'string', description: 'Token to swap from (e.g., USDC)' },
+          toToken: { type: 'string', description: 'Token to swap to (e.g., GMX)' },
+          amountUSD: { type: 'number', description: 'Amount in USD to simulate' },
+          action: { type: 'string', enum: ['swap', 'lp'], description: 'Type of strategy' },
+          protocol: { type: 'string', description: 'Protocol to use (camelot, gmx, uniswap)' }
+        },
+        required: ['fromToken', 'toToken', 'amountUSD', 'action', 'protocol']
+      }
     }
   },
   {
-    name: 'getPoolInfo',
-    description: 'Get liquidity pool information for a token pair',
-    parameters: {
-      type: 'object',
-      properties: {
-        tokenA: { type: 'string', description: 'First token in the pair' },
-        tokenB: { type: 'string', description: 'Second token in the pair' }
-      },
-      required: ['tokenA', 'tokenB']
+    type: 'function',
+    function: {
+      name: 'compareTokens',
+      description: 'Compare two tokens side by side with prices, volumes, and liquidity',
+      parameters: {
+        type: 'object',
+        properties: {
+          tokenA: { type: 'string', description: 'First token ticker or CA' },
+          tokenB: { type: 'string', description: 'Second token ticker or CA' }
+        },
+        required: ['tokenA', 'tokenB']
+      }
     }
   },
   {
-    name: 'getArbitrumMarketOverview',
-    description: 'Get top tokens by volume and overall market sentiment',
-    parameters: { type: 'object', properties: {} }
+    type: 'function',
+    function: {
+      name: 'checkProtocolSafety',
+      description: 'Check trust score and safety metrics for a DeFi protocol',
+      parameters: {
+        type: 'object',
+        properties: {
+          protocol: { type: 'string', description: 'Protocol name (e.g., Camelot, GMX, Aave)' }
+        },
+        required: ['protocol']
+      }
+    }
   },
   {
-    name: 'getTopGainers',
-    description: 'Get the top 5 tokens with the biggest price increases',
-    parameters: { type: 'object', properties: {} }
+    type: 'function',
+    function: {
+      name: 'getPoolInfo',
+      description: 'Get liquidity pool information for a token pair',
+      parameters: {
+        type: 'object',
+        properties: {
+          tokenA: { type: 'string', description: 'First token in the pair' },
+          tokenB: { type: 'string', description: 'Second token in the pair' }
+        },
+        required: ['tokenA', 'tokenB']
+      }
+    }
   },
   {
-    name: 'getTopLosers',
-    description: 'Get the top 5 tokens with the biggest price drops',
-    parameters: { type: 'object', properties: {} }
+    type: 'function',
+    function: {
+      name: 'getArbitrumMarketOverview',
+      description: 'Get top tokens by volume and overall market sentiment',
+      parameters: { type: 'object', properties: {} }
+    }
   },
   {
-    name: 'simulateStrategy',
-    description: 'Run a DeFi strategy simulation (swap or LP) with real onchain data',
-    parameters: {
-      type: 'object',
-      properties: {
-        fromToken: { type: 'string', description: 'Token to swap from' },
-        toToken: { type: 'string', description: 'Token to swap to' },
-        amountUSD: { type: 'number', description: 'Amount in USD to simulate' },
-        action: { type: 'string', enum: ['swap', 'lp'], description: 'Type of strategy' },
-        protocol: { type: 'string', description: 'Protocol to use (camelot, gmx, uniswap, aave)' }
-      },
-      required: ['fromToken', 'toToken', 'amountUSD', 'action', 'protocol']
+    type: 'function',
+    function: {
+      name: 'getTopGainers',
+      description: 'Get the top 5 tokens with the biggest price increases',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getTopLosers',
+      description: 'Get the top 5 tokens with the biggest price drops',
+      parameters: { type: 'object', properties: {} }
     }
   }
 ];
 
-async function executeFunction(name: string, args: any) {
-  switch (name) {
-    case 'checkTokenPrice':
-      return await checkTokenPrice(args.token);
-    case 'compareTokens':
-      return await compareTokens(args.tokenA, args.tokenB);
-    case 'checkGasFees':
-      return await checkGasFees();
-    case 'checkProtocolSafety':
-      return await checkProtocolSafety(args.protocol);
-    case 'getPoolInfo':
-      return await getPoolInfo(args.tokenA, args.tokenB);
-    case 'getArbitrumMarketOverview':
-      return await getArbitrumMarketOverview();
-    case 'getTopGainers':
-      return await getTopGainers();
-    case 'getTopLosers':
-      return await getTopLosers();
-    case 'simulateStrategy':
-      return { data: await simulateStrategy(args), error: null };
-    default:
-      return { data: null, error: 'Unknown function' };
+async function executeTool(name: string, args: any) {
+  console.log(`Executing tool: ${name} with args:`, args);
+  
+  try {
+    switch (name) {
+      case 'checkTokenPrice':
+        return await checkTokenPrice(args.token);
+      case 'checkGasFees':
+        return await checkGasFees();
+      case 'simulateStrategy':
+        const result = await simulateStrategy(args);
+        return { data: result, error: null };
+      case 'compareTokens':
+        return await compareTokens(args.tokenA, args.tokenB);
+      case 'checkProtocolSafety':
+        return await checkProtocolSafety(args.protocol);
+      case 'getPoolInfo':
+        return await getPoolInfo(args.tokenA, args.tokenB);
+      case 'getArbitrumMarketOverview':
+        return await getArbitrumMarketOverview();
+      case 'getTopGainers':
+        return await getTopGainers();
+      case 'getTopLosers':
+        return await getTopLosers();
+      default:
+        return { data: null, error: `Unknown tool: ${name}` };
+    }
+  } catch (error) {
+    console.error(`Error executing tool ${name}:`, error);
+    return { data: null, error: `Failed to execute ${name}: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
-} 
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -173,51 +179,116 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Clean messages to only include valid properties for Groq API
+    const cleanMessages = messages.map((msg: any) => ({
+      role: msg.role,
+      content: msg.content,
+      ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
+      ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
+    }));
+
     // Build message array for Groq
-    const groqMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    const groqMessages: any[] = [
       { role: 'system', content: SYSTEM_PROMPT },
-      ...messages as Array<{ role: 'user' | 'assistant'; content: string }>,
+      ...cleanMessages,
     ];
 
     // If simulation results are provided, append interpretation request
     if (simulationResult) {
       groqMessages.push({
         role: 'user',
-        content: `[SIMULATION COMPLETE - interpret these results for the user in 3-4 sentences, be specific about numbers, give a clear recommendation]:
+        content: `[SIMULATION RESULTS - interpret for the user in 2-3 sentences, be specific with numbers and give a clear yes/no recommendation]:
 ${JSON.stringify(simulationResult, null, 2)}`,
       });
     }
 
+    // First call to get tool calls
     const completion = await groq.chat.completions.create({
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      model: 'llama3-8b-8192',
       messages: groqMessages,
+      tools: TOOLS,
+      tool_choice: 'auto',
       temperature: 0.7,
       max_tokens: 1024,
     });
 
-    const assistantResponse = completion.choices[0]?.message?.content || '';
-
-    // Parse <simulate> block if present
-    let simulationParams = null;
-    const simulateMatch = assistantResponse.match(/<simulate>([\s\S]*?)<\/simulate>/);
+    const assistantMessage = completion.choices[0]?.message;
     
+    // Check if there are tool calls
+    if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
+      // Add assistant message to conversation
+      groqMessages.push(assistantMessage);
+
+      // Execute each tool call
+      for (const toolCall of assistantMessage.tool_calls) {
+        const { name, arguments: argsString } = toolCall.function;
+        let args;
+        try {
+          args = JSON.parse(argsString);
+        } catch {
+          args = {};
+        }
+
+        const toolResult = await executeTool(name, args);
+        
+        // Add tool result to conversation
+        groqMessages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(toolResult),
+        });
+      }
+
+      // Second call to get final response
+      const finalCompletion = await groq.chat.completions.create({
+        model: 'llama3-8b-8192',
+        messages: groqMessages,
+        temperature: 0.7,
+        max_tokens: 1024,
+      });
+
+      const finalResponse = finalCompletion.choices[0]?.message?.content || '';
+      
+      // Check for simulation block in final response
+      let simulationParams = null;
+      const simulateMatch = finalResponse.match(/<simulate>([\s\S]*?)<\/simulate>/);
+      if (simulateMatch) {
+        try {
+          simulationParams = JSON.parse(simulateMatch[1].trim());
+        } catch {
+          // Invalid JSON, ignore
+        }
+      }
+
+      return NextResponse.json({
+        response: finalResponse,
+        simulationParams,
+      });
+    }
+
+    // No tool calls, just return the response
+    const response = assistantMessage?.content || '';
+    
+    // Check for simulation block
+    let simulationParams = null;
+    const simulateMatch = response.match(/<simulate>([\s\S]*?)<\/simulate>/);
     if (simulateMatch) {
       try {
         simulationParams = JSON.parse(simulateMatch[1].trim());
       } catch {
-        // Invalid JSON in simulate block, ignore
+        // Invalid JSON, ignore
       }
     }
 
     return NextResponse.json({
-      response: assistantResponse,
+      response,
       simulationParams,
     });
 
   } catch (error) {
     console.error('Agent API error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Agent temporarily unavailable' },
       { status: 500 }
     );
   }

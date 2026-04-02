@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { parseCommand, COMMANDS_HELP } from '@/lib/commandParser';
 import CommandResults from '@/components/CommandResults';
+import SimulationCard from '@/components/SimulationCard';
+import { Analytics } from "@vercel/analytics/next"
 
 interface SimulationResult {
   fromToken: string;
@@ -49,11 +51,27 @@ interface Message {
   simulationResult?: SimulationResult;
 }
 
+const colors = {
+  bg: '#000000',
+  surface: '#0d0d0d',
+  surfaceHover: '#111111',
+  border: '#222222',
+  borderActive: '#333333',
+  text: '#ffffff',
+  textMuted: '#888888',
+  textDim: '#555555',
+  accent: '#3b82f6',
+  accentDim: '#1e3a5f',
+  green: '#22c55e',
+  red: '#ef4444',
+  yellow: '#eab308',
+};
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hey! I'm ArbiSafe 🛡️ — your onchain strategy simulator for Arbitrum. Tell me what you want to do and I'll run the real numbers before you risk a dollar.\n\nType / to see available commands, or just chat naturally.",
+      content: "ArbiSafe Terminal v1.0 — Arbitrum Strategy Simulator\n\nType a command or ask about your strategy. Use /help for available commands.",
     },
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -84,30 +102,27 @@ export default function Home() {
     setMessages(newMessages);
     setIsThinking(true);
 
-    // Check if this is a command
     const command = parseCommand(textToSend);
 
-    // Handle /clear command
     if (command.command === 'clear') {
       setMessages([{
         role: 'assistant',
-        content: "Hey! I'm ArbiSafe 🛡️ — your onchain strategy simulator for Arbitrum. Tell me what you want to do and I'll run the real numbers before you risk a dollar.\n\nType / to see available commands, or just chat naturally.",
+        content: "ArbiSafe Terminal v1.0 — Arbitrum Strategy Simulator\n\nType a command or ask about your strategy. Use /help for available commands.",
       }]);
       setIsThinking(false);
+      setShowChips(true);
       return;
     }
 
-    // Handle unknown command
     if (command.command === 'unknown') {
       setMessages([
         ...newMessages,
-        { role: 'assistant', content: "I don't recognize that command. Type /help to see what I can do 👾" },
+        { role: 'assistant', content: "Unknown command. Type /help for available commands." },
       ]);
       setIsThinking(false);
       return;
     }
 
-    // Handle valid commands (not null, not unknown, not clear)
     if (command.command !== null) {
       try {
         const response = await fetch('/api/command', {
@@ -120,12 +135,13 @@ export default function Home() {
         });
 
         if (!response.ok) {
-          throw new Error('Command failed');
+          const errorText = await response.text();
+          console.error('Command API error:', response.status, errorText);
+          throw new Error(`Command failed: ${response.status} ${errorText}`);
         }
 
         const data = await response.json();
         
-        // Add command result as a special message
         const commandMessage: Message = {
           role: 'assistant',
           content: `COMMAND_RESULT:${JSON.stringify({ type: data.type, data: data.data })}`,
@@ -136,7 +152,7 @@ export default function Home() {
         console.error('Command error:', err);
         setMessages([
           ...newMessages,
-          { role: 'assistant', content: "Sorry, I couldn't process that command. Try again in a moment 🔄" },
+          { role: 'assistant', content: "Error: Command execution failed." },
         ]);
       } finally {
         setIsThinking(false);
@@ -144,9 +160,7 @@ export default function Home() {
       return;
     }
 
-    // Normal agent chat flow for non-commands
     try {
-      // First call to agent
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -160,7 +174,6 @@ export default function Home() {
       const data = await response.json();
       let finalMessages: Message[] = [...newMessages, { role: 'assistant', content: data.response }];
 
-      // If simulation params, run simulation
       if (data.simulationParams) {
         const simResponse = await fetch('/api/simulate', {
           method: 'POST',
@@ -171,7 +184,6 @@ export default function Home() {
         if (simResponse.ok) {
           const simResult: SimulationResult = await simResponse.json();
           
-          // Second call to agent with results
           const interpResponse = await fetch('/api/agent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -197,7 +209,7 @@ export default function Home() {
       console.error('Agent error:', err);
       setMessages([
         ...newMessages,
-        { role: 'assistant', content: "Sorry, I hit a snag fetching that data. Try again in a moment 🔄" },
+        { role: 'assistant', content: "Error: Request failed." },
       ]);
     } finally {
       setIsThinking(false);
@@ -216,294 +228,336 @@ export default function Home() {
     setModalOpen(true);
   };
 
-  const getSlippageColor = (slippage: number) => {
-    if (slippage < 0.5) return '#22c55e';
-    if (slippage < 1) return '#eab308';
-    return '#ef4444';
-  };
-
-  const getTrustBadgeColor = (tier: string) => {
-    if (tier.includes('Fort')) return '#22c55e';
-    if (tier.includes('Carefully')) return '#eab308';
-    return '#ef4444';
-  };
-
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#0a0a0f' }}>
-      {/* TOP BAR */}
-      <header className="flex items-center justify-between px-4 flex-shrink-0" style={{ 
-        height: '48px', 
-        backgroundColor: '#0d0d16',
-        borderBottom: '0.5px solid #1e1e2e'
-      }}>
+    <div className="h-screen flex flex-col" style={{ backgroundColor: colors.bg, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {/* HEADER */}
+      <header 
+        className="flex items-center justify-between flex-shrink-0"
+        style={{ 
+          height: '36px', 
+          backgroundColor: colors.surface,
+          borderBottom: `1px solid ${colors.border}`,
+          padding: '0 16px'
+        }}
+      >
         <div className="flex items-center gap-2">
-          <img src="/logo.png" width="28" height="28" style={{ borderRadius: '6px' }} alt="ArbiSafe" />
-          <span style={{ color: '#ffffff', fontSize: '15px', fontWeight: 500 }}>ArbiSafe</span>
+          <img src="/logo.png" width={18} height={18} style={{ borderRadius: '3px' }} alt="" />
+          <span style={{ color: colors.text, fontSize: '13px', fontWeight: 700, letterSpacing: '-0.3px' }}>
+            ArbiSafe
+          </span>
+          <span style={{ color: colors.textDim, fontSize: '11px', fontWeight: 500 }}>
+            Agent #162
+          </span>
         </div>
-        <div className="flex items-center gap-3">
-          <span style={{ 
-            border: '0.5px solid #3b82f6', 
-            color: '#3b82f6',
-            fontSize: '11px',
-            padding: '2px 8px',
-            borderRadius: '4px'
-          }}>Agent #162</span>
-          <span style={{ color: '#6a6a8a', fontSize: '12px' }}>Arbitrum Sepolia</span>
-          <span style={{ color: '#4a90e2', fontSize: '10px', marginLeft: '4px' }}>● Powered by Arbitrum</span>
+        <div className="flex items-center gap-2">
+          <span style={{ color: colors.textDim, fontSize: '11px', fontWeight: 500 }}>
+            Arbitrum Sepolia
+          </span>
+          <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: colors.green }} />
         </div>
       </header>
 
-      {/* CHAT AREA */}
-      <div 
-        className="flex-1 overflow-y-auto"
-        style={{ padding: '20px 18px' }}
-      >
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} gap-2.5 mb-4`}
+      {/* MAIN CONTENT - CENTERED */}
+      <div className="flex-1 flex justify-center overflow-hidden">
+        <div className="flex flex-col w-full" style={{ maxWidth: '800px' }}>
+          
+          {/* CHAT AREA */}
+          <div 
+            className="flex-1 overflow-y-auto"
+            style={{ padding: '12px 16px' }}
           >
-            {/* Avatar */}
+            {messages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`flex ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+                style={{ gap: '6px', marginBottom: '8px' }}
+              >
+                {/* Avatar */}
+                <div 
+                  className="flex items-center justify-center flex-shrink-0"
+                  style={{ 
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '3px',
+                    backgroundColor: msg.role === 'user' ? colors.surface : colors.surfaceHover,
+                    border: `1px solid ${colors.border}`,
+                  }}
+                >
+                  {msg.role === 'user' ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#3b82f6">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                      <rect x="9" y="9" width="6" height="6" rx="1" fill="#0d0d0d"/>
+                      <circle cx="11" cy="12" r="1" fill="#3b82f6"/>
+                      <circle cx="13" cy="12" r="1" fill="#3b82f6"/>
+                    </svg>
+                  )}
+                </div>
+
+                {/* Message */}
+                <div
+                  className="flex flex-col"
+                  style={{
+                    maxWidth: 'calc(100% - 30px)',
+                    backgroundColor: msg.role === 'user' ? 'transparent' : colors.surface,
+                    border: msg.role === 'user' ? 'none' : `1px solid ${colors.border}`,
+                    borderRadius: '4px',
+                    padding: msg.role === 'user' ? '4px 0' : '8px 10px',
+                  }}
+                >
+                  {msg.content.startsWith('COMMAND_RESULT:') ? (
+                    (() => {
+                      try {
+                        const resultStr = msg.content.slice('COMMAND_RESULT:'.length);
+                        const result = JSON.parse(resultStr);
+                        return <CommandResults type={result.type} data={result.data} />;
+                      } catch {
+                        return <span style={{ color: colors.text, fontSize: '13px', fontWeight: 500, lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{msg.content}</span>;
+                      }
+                    })()
+                  ) : (
+                    <span style={{ 
+                      color: msg.role === 'user' ? colors.text : colors.textMuted, 
+                      fontSize: '13px', 
+                      fontWeight: msg.role === 'user' ? 600 : 500,
+                      lineHeight: 1.4,
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {msg.content}
+                    </span>
+                  )}
+                  
+                  {msg.simulationResult && (
+                    <SimulationCard 
+                      data={msg.simulationResult} 
+                      onOpenModal={() => openModal(msg.simulationResult!)} 
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* Suggestion Chips */}
             <div 
-              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ 
-                backgroundColor: msg.role === 'user' ? '#0d1a2e' : '#0a1a3a',
-                border: msg.role === 'user' ? '0.5px solid #1a2a4a' : '0.5px solid #1a3a6a'
+              className="flex flex-wrap"
+              style={{
+                gap: '6px',
+                marginTop: '8px',
+                marginLeft: '26px',
+                opacity: showChips && messages.length === 1 ? 1 : 0,
+                transform: showChips && messages.length === 1 ? 'translateY(0)' : 'translateY(-8px)',
+                transition: 'opacity 150ms ease-out, transform 150ms ease-out',
+                pointerEvents: showChips && messages.length === 1 ? 'auto' : 'none'
               }}
             >
-              <span className="text-xs">{msg.role === 'user' ? 'Y' : '🛡️'}</span>
+              {['Swap $200 USDC → ARB', 'LP $500 USDC/WETH', '/price ARB'].map((chip, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleSend(chip)}
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: `1px solid ${colors.border}`,
+                    color: colors.textDim,
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    padding: '3px 8px',
+                    borderRadius: '3px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = colors.borderActive;
+                    e.currentTarget.style.color = colors.textMuted;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = colors.border;
+                    e.currentTarget.style.color = colors.textDim;
+                  }}
+                >
+                  {chip}
+                </button>
+              ))}
             </div>
 
-            {/* Bubble */}
-            <div
-              className="max-w-[75%]"
-              style={{
-                backgroundColor: msg.role === 'user' ? '#1a3a6a' : '#12121f',
-                border: `0.5px solid ${msg.role === 'user' ? '#2a5aaa' : '#1e1e30'}`,
-                color: msg.role === 'user' ? '#e0eaff' : '#c8c8d8',
-                borderRadius: msg.role === 'user' ? '14px 4px 14px 14px' : '4px 14px 14px 14px',
-                padding: '10px 14px',
-                fontSize: '13px',
-                lineHeight: 1.5,
-                whiteSpace: 'pre-wrap'
-              }}
-            >
-              {/* Check for command results */}
-              {msg.content.startsWith('COMMAND_RESULT:') ? (
-                (() => {
-                  try {
-                    const resultStr = msg.content.slice('COMMAND_RESULT:'.length);
-                    const result = JSON.parse(resultStr);
-                    return <CommandResults type={result.type} data={result.data} />;
-                  } catch {
-                    return msg.content;
-                  }
-                })()
-              ) : (
-                msg.content
-              )}
-              
-              {/* Simulation Result Card */}
-              {msg.simulationResult && (
-                <SimulationCard 
-                  data={msg.simulationResult} 
-                  onOpenModal={() => openModal(msg.simulationResult!)} 
-                />
-              )}
-            </div>
+            {/* Typing Indicator */}
+            {isThinking && (
+              <div className="flex flex-row" style={{ gap: '6px', marginTop: '8px' }}>
+                <div 
+                  className="flex items-center justify-center flex-shrink-0"
+                  style={{ 
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '3px',
+                    backgroundColor: colors.surfaceHover,
+                    border: `1px solid ${colors.border}`,
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#3b82f6">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    <rect x="9" y="9" width="6" height="6" rx="1" fill="#0d0d0d"/>
+                    <circle cx="11" cy="12" r="1" fill="#3b82f6"/>
+                    <circle cx="13" cy="12" r="1" fill="#3b82f6"/>
+                  </svg>
+                </div>
+                <div
+                  style={{
+                    backgroundColor: colors.surface,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '4px',
+                    padding: '8px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '3px'
+                  }}
+                >
+                  <span className="animate-pulse" style={{ width: '4px', height: '4px', borderRadius: '1px', backgroundColor: colors.textDim }} />
+                  <span className="animate-pulse" style={{ width: '4px', height: '4px', borderRadius: '1px', backgroundColor: colors.textDim, animationDelay: '0.15s' }} />
+                  <span className="animate-pulse" style={{ width: '4px', height: '4px', borderRadius: '1px', backgroundColor: colors.textDim, animationDelay: '0.3s' }} />
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
-        ))}
 
-        {/* Suggestion Chips with fade transition */}
-        <div 
-          className="flex flex-col gap-2 pl-9 mt-2"
-          style={{
-            opacity: showChips && messages.length === 1 ? 1 : 0,
-            transform: showChips && messages.length === 1 ? 'translateY(0)' : 'translateY(-10px)',
-            transition: 'opacity 300ms ease-out, transform 300ms ease-out',
-            pointerEvents: showChips && messages.length === 1 ? 'auto' : 'none'
-          }}
-        >
-          {[
-            'Swap $200 USDC → ARB on Camelot',
-            'LP $500 USDC/WETH on Camelot',
-            '/price ARB'
-          ].map((chip, i) => (
-            <button
-              key={i}
-              onClick={() => handleSend(chip)}
-              style={{
-                backgroundColor: '#0e0e1e',
-                border: '0.5px solid #2a2a4a',
-                color: '#8a8ab0',
-                fontSize: '11px',
-                padding: '5px 12px',
-                borderRadius: '20px',
-                alignSelf: 'flex-start',
-                cursor: 'pointer'
-              }}
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
-
-        {/* Typing Indicator */}
-        {isThinking && (
-          <div className="flex flex-row gap-2.5 mb-4">
-            <div 
-              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: '#0a1a3a', border: '0.5px solid #1a3a6a' }}
-            >
-              <span className="text-xs">🛡️</span>
-            </div>
-            <div
-              style={{
-                backgroundColor: '#12121f',
-                border: '0.5px solid #1e1e30',
-                color: '#c8c8d8',
-                borderRadius: '4px 14px 14px 14px',
-                padding: '12px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* DISCLAIMER BAR */}
-      <div 
-        className="flex-shrink-0"
-        style={{ 
-          fontSize: '10px', 
-          color: '#3a3a5a',
-          textAlign: 'center',
-          padding: '5px',
-          borderTop: '0.5px solid #141424',
-          backgroundColor: '#0a0a0f'
-        }}
-      >
-        ⚠ Simulations are for informational purposes only. Not financial advice. DeFi carries significant risk of loss.
-      </div>
-
-      {/* INPUT BAR */}
-      <div className="relative flex-shrink-0">
-        {/* Command Autocomplete Dropdown */}
-        {showCommandAutocomplete && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '60px',
-              left: '14px',
-              right: '14px',
-              backgroundColor: '#0e0e1e',
-              border: '0.5px solid #2a2a4a',
-              borderRadius: '8px',
-              maxHeight: '200px',
-              overflowY: 'auto',
-              zIndex: 10,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          {/* DISCLAIMER */}
+          <div 
+            style={{ 
+              fontSize: '10px', 
+              color: colors.textDim,
+              textAlign: 'center',
+              padding: '4px 16px',
+              fontWeight: 500
             }}
           >
-            {COMMANDS_HELP.map((cmd, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  setInputValue(cmd.command.split(' ')[0] + ' ');
-                  setShowCommandAutocomplete(false);
-                }}
+            Not financial advice. DeFi carries risk of loss.
+          </div>
+
+          {/* INPUT AREA */}
+          <div className="relative flex-shrink-0" style={{ padding: '8px 16px 12px' }}>
+            {/* Command Autocomplete */}
+            {showCommandAutocomplete && (
+              <div
                 style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  width: '100%',
-                  padding: '8px 12px',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  borderBottom: i < COMMANDS_HELP.length - 1 ? '0.5px solid #1a1a2a' : 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#1a1a2e';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'transparent';
+                  position: 'absolute',
+                  bottom: '52px',
+                  left: '16px',
+                  right: '16px',
+                  backgroundColor: colors.surface,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: '4px',
+                  maxHeight: '160px',
+                  overflowY: 'auto',
+                  zIndex: 10,
                 }}
               >
-                <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#3b82f6' }}>
-                  {cmd.command}
-                </span>
-                <span style={{ fontSize: '11px', color: '#6a6a8a' }}>
-                  {cmd.description}
-                </span>
+                {COMMANDS_HELP.map((cmd, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInputValue(cmd.command.split(' ')[0] + ' ');
+                      setShowCommandAutocomplete(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      gap: '10px',
+                      width: '100%',
+                      padding: '6px 10px',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      borderBottom: i < COMMANDS_HELP.length - 1 ? `1px solid ${colors.border}` : 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = colors.surfaceHover;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <span style={{ fontFamily: 'monospace', fontSize: '12px', color: colors.accent, fontWeight: 600 }}>
+                      {cmd.command}
+                    </span>
+                    <span style={{ fontSize: '12px', color: colors.textDim }}>
+                      {cmd.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            {/* Input Bar */}
+            <div 
+              className="flex items-center gap-2"
+              style={{ 
+                backgroundColor: colors.surface,
+                border: `1px solid ${colors.border}`,
+                borderRadius: '4px',
+                padding: '6px 8px'
+              }}
+            >
+              <span style={{ color: colors.accent, fontSize: '14px', fontWeight: 700, fontFamily: 'monospace' }}>
+                &gt;
+              </span>
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setInputValue(value);
+                  if (value === '/') {
+                    setShowCommandAutocomplete(true);
+                  } else if (!value.startsWith('/')) {
+                    setShowCommandAutocomplete(false);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowCommandAutocomplete(false);
+                  }
+                  handleKeyPress(e);
+                }}
+                placeholder="Type command or ask..."
+                style={{
+                  flex: 1,
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: colors.text,
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  outline: 'none'
+                }}
+                autoFocus
+              />
+              <button
+                onClick={() => handleSend()}
+                disabled={!inputValue.trim() || isThinking}
+                style={{
+                  backgroundColor: 'transparent',
+                  color: inputValue.trim() && !isThinking ? colors.accent : colors.textDim,
+                  border: `1px solid ${inputValue.trim() && !isThinking ? colors.accentDim : colors.border}`,
+                  borderRadius: '3px',
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: inputValue.trim() && !isThinking ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                SEND
               </button>
-            ))}
+            </div>
           </div>
-        )}
-        <div 
-          className="flex items-center gap-2"
-          style={{ 
-            height: '56px',
-            backgroundColor: '#0d0d16', 
-            borderTop: '0.5px solid #1a1a2a',
-            padding: '10px 14px'
-          }}
-        >
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => {
-              const value = e.target.value;
-              setInputValue(value);
-              // Show autocomplete when typing "/"
-              if (value === '/') {
-                setShowCommandAutocomplete(true);
-              } else if (!value.startsWith('/')) {
-                setShowCommandAutocomplete(false);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setShowCommandAutocomplete(false);
-              }
-              handleKeyPress(e);
-            }}
-            placeholder="Ask ArbiSafe about your strategy..."
-            className="flex-1"
-            style={{
-              backgroundColor: '#12121f',
-              border: '0.5px solid #2a2a4a',
-              color: '#c8c8d8',
-              borderRadius: '20px',
-              padding: '8px 16px',
-              fontSize: '13px',
-              outline: 'none'
-            }}
-          />
-          <button
-            onClick={() => handleSend()}
-            disabled={!inputValue.trim() || isThinking}
-            style={{
-              backgroundColor: '#3b82f6',
-              color: '#ffffff',
-              borderRadius: '20px',
-              padding: '8px 18px',
-              fontSize: '13px',
-              cursor: inputValue.trim() && !isThinking ? 'pointer' : 'not-allowed',
-              opacity: inputValue.trim() && !isThinking ? 1 : 0.5,
-              border: 'none'
-            }}
-          >
-            Send
-          </button>
         </div>
       </div>
 
@@ -518,262 +572,221 @@ export default function Home() {
   );
 }
 
-// SIMULATION CARD COMPONENT
-function SimulationCard({ data, onOpenModal }: { data: SimulationResult; onOpenModal: () => void }) {
-  const [activeTab, setActiveTab] = useState<'stress' | 'profit'>('stress');
-
-  const getSlippageColor = (slippage: number) => {
-    if (slippage < 0.5) return '#22c55e';
-    if (slippage < 1) return '#eab308';
-    return '#ef4444';
-  };
-
-  const getTrustBadgeColor = (tier: string) => {
-    if (tier.includes('Fort')) return '#22c55e';
-    if (tier.includes('Carefully')) return '#eab308';
-    return '#ef4444';
-  };
-
-  return (
-    <div style={{ 
-      backgroundColor: '#0e0e1e', 
-      border: '0.5px solid #2a2a4a', 
-      borderRadius: '12px',
-      maxWidth: '340px',
-      marginTop: '12px'
-    }}>
-      {/* Card Header */}
-      <div className="flex items-center justify-between" style={{ padding: '10px 14px', borderBottom: '0.5px solid #1a1a2a' }}>
-        <span style={{ color: '#ffffff', fontSize: '12px' }}>
-          {data.fromToken} → {data.toToken} · ${data.toAmountUSD.toFixed(0)}
-        </span>
-        <span style={{ 
-          color: getTrustBadgeColor(data.trustTier),
-          fontSize: '10px',
-          border: `0.5px solid ${getTrustBadgeColor(data.trustTier)}`,
-          padding: '2px 6px',
-          borderRadius: '4px'
-        }}>
-          {data.trustTier}
-        </span>
-      </div>
-
-      {/* 3-Column Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', backgroundColor: '#1a1a2a' }}>
-        <div style={{ backgroundColor: '#0e0e1e', padding: '10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '9px', color: '#6a6a8a', textTransform: 'uppercase' }}>You Get</div>
-          <div style={{ fontSize: '14px', color: '#3b82f6', fontWeight: 600 }}>
-            {data.toAmount.toFixed(4)} {data.toToken}
-          </div>
-        </div>
-        <div style={{ backgroundColor: '#0e0e1e', padding: '10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '9px', color: '#6a6a8a', textTransform: 'uppercase' }}>Slippage</div>
-          <div style={{ fontSize: '14px', color: getSlippageColor(data.slippagePercent), fontWeight: 600 }}>
-            {data.slippagePercent.toFixed(2)}%
-          </div>
-        </div>
-        <div style={{ backgroundColor: '#0e0e1e', padding: '10px', textAlign: 'center' }}>
-          <div style={{ fontSize: '9px', color: '#6a6a8a', textTransform: 'uppercase' }}>Gas</div>
-          <div style={{ fontSize: '14px', color: '#c8c8d8', fontWeight: 600 }}>
-            ${data.gasCostUSD.toFixed(2)}
-          </div>
-        </div>
-      </div>
-
-      {/* Degen Bar */}
-      <div className="flex items-center gap-2" style={{ padding: '8px 14px', borderTop: '0.5px solid #1a1a2a' }}>
-        <span style={{ fontSize: '10px', color: '#6a6a8a', textTransform: 'uppercase' }}>Degen</span>
-        <div className="flex-1" style={{ height: '4px', backgroundColor: '#1a1a2a', borderRadius: '2px', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${data.degenScore}%`, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', borderRadius: '2px' }} />
-        </div>
-        <span style={{ fontSize: '10px', color: '#8b5cf6' }}>
-          {data.degenScore} · {data.degenLabel}
-        </span>
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderTop: '0.5px solid #1a1a2a', borderBottom: '0.5px solid #1a1a2a' }}>
-        {(['stress', 'profit'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: 1,
-              padding: '6px',
-              fontSize: '10px',
-              backgroundColor: activeTab === tab ? '#1a1a2a' : 'transparent',
-              color: activeTab === tab ? '#ffffff' : '#6a6a8a',
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            {tab === 'stress' ? 'Stress Test' : 'Profit Scenarios'}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      <div style={{ padding: '8px 0' }}>
-        {(activeTab === 'stress' ? data.stressTests : data.profitScenarios).map((item, i) => (
-          <div key={i} className="flex items-center justify-between" style={{ padding: '4px 14px', fontSize: '11px' }}>
-            <span style={{ color: '#6a6a8a' }}>{item.label}</span>
-            <span style={{ color: '#c8c8d8' }}>${item.portfolioValueUSD.toFixed(2)}</span>
-            <span style={{ color: activeTab === 'stress' ? '#ef4444' : '#22c55e' }}>
-              {item.pnlUSD >= 0 ? '+' : ''}${item.pnlUSD.toFixed(2)}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* View Full Report */}
-      <button
-        onClick={onOpenModal}
-        style={{
-          width: '100%',
-          padding: '8px',
-          fontSize: '11px',
-          color: '#3b82f6',
-          backgroundColor: 'transparent',
-          border: 'none',
-          borderTop: '0.5px solid #1a1a2a',
-          cursor: 'pointer'
-        }}
-      >
-        View Full Report →
-      </button>
-    </div>
-  );
-}
-
-// FULL REPORT MODAL COMPONENT
+// FULL REPORT MODAL
 function FullReportModal({ data, onClose }: { data: SimulationResult; onClose: () => void }) {
-  const getTrustColor = (score: number) => {
-    if (score >= 75) return '#22c55e';
-    if (score >= 45) return '#eab308';
-    return '#ef4444';
+  const getTrustColor = (tier: string) => {
+    if (tier.includes('Fort')) return colors.green;
+    if (tier.includes('Carefully')) return colors.yellow;
+    return colors.red;
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(0,0,0,0.85)' }} onClick={onClose}>
-      <div className="relative" style={{ backgroundColor: '#0d0d16', border: '0.5px solid #2a2a4a', borderRadius: '16px', maxWidth: '560px', width: '90%', maxHeight: '85vh', overflowY: 'auto', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
-        <button onClick={onClose} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: '#6a6a8a', fontSize: '20px', cursor: 'pointer' }}>×</button>
-        <h2 style={{ color: '#ffffff', fontSize: '18px', marginBottom: '16px' }}>Full Simulation Report</h2>
-        <div style={{ marginBottom: '20px' }}>
-          <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>Swap Summary</h3>
-          <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '12px' }}>
-            <div className="grid grid-cols-2 gap-3" style={{ fontSize: '13px' }}>
-              <div><span style={{ color: '#6a6a8a' }}>From:</span> <span style={{ color: '#fff' }}>{data.fromAmount.toFixed(4)} {data.fromToken}</span></div>
-              <div><span style={{ color: '#6a6a8a' }}>To:</span> <span style={{ color: '#fff' }}>{data.toAmount.toFixed(4)} {data.toToken}</span></div>
-              <div><span style={{ color: '#6a6a8a' }}>Output Value:</span> <span style={{ color: '#fff' }}>${data.toAmountUSD.toFixed(2)}</span></div>
-              <div><span style={{ color: '#6a6a8a' }}>Gas Cost:</span> <span style={{ color: '#fff' }}>${data.gasCostUSD.toFixed(2)}</span></div>
-              <div><span style={{ color: '#6a6a8a' }}>Slippage:</span> <span style={{ color: '#fff' }}>{data.slippagePercent.toFixed(2)}%</span></div>
-              <div><span style={{ color: '#6a6a8a' }}>Net Profit:</span> <span style={{ color: data.netProfitUSD >= 0 ? '#22c55e' : '#ef4444' }}>${data.netProfitUSD.toFixed(2)}</span></div>
-            </div>
-          </div>
-        </div>
-        {data.lpAPR !== null && (
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>LP Earnings</h3>
-            <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '12px' }}>
-              <div className="grid grid-cols-3 gap-3" style={{ fontSize: '13px' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ color: '#6a6a8a', fontSize: '10px' }}>APR</div>
-                  <div style={{ color: '#8b5cf6', fontSize: '16px', fontWeight: 600 }}>{data.lpAPR}%</div>
+    <div 
+      className="fixed inset-0 flex items-center justify-center z-50" 
+      style={{ backgroundColor: 'rgba(0,0,0,0.9)' }} 
+      onClick={onClose}
+    >
+      <div 
+        style={{ 
+          backgroundColor: colors.surface, 
+          border: `1px solid ${colors.border}`, 
+          borderRadius: '4px', 
+          maxWidth: '700px', 
+          width: 'calc(100% - 32px)', 
+          maxHeight: '90vh', 
+          overflowY: 'auto',
+          position: 'relative'
+        }} 
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button 
+          onClick={onClose} 
+          style={{ 
+            position: 'absolute', 
+            top: '8px', 
+            right: '8px', 
+            width: '24px',
+            height: '24px',
+            borderRadius: '3px',
+            backgroundColor: 'transparent', 
+            border: `1px solid ${colors.border}`, 
+            color: colors.textDim, 
+            fontSize: '14px', 
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          ×
+        </button>
+
+        <div style={{ padding: '16px' }}>
+          <h2 style={{ color: colors.text, fontSize: '14px', fontWeight: 700, marginBottom: '16px', letterSpacing: '-0.3px' }}>
+            Strategy Report
+          </h2>
+
+          {/* Swap Summary */}
+          <div style={{ marginBottom: '12px' }}>
+            <h3 style={{ color: colors.textDim, fontSize: '10px', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+              Swap Summary
+            </h3>
+            <div style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: '3px', padding: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', fontSize: '12px' }}>
+                <div>
+                  <div style={{ color: colors.textDim, fontSize: '10px', fontWeight: 500 }}>FROM</div>
+                  <div style={{ color: colors.text, fontWeight: 600 }}>{data.fromAmount.toFixed(4)} {data.fromToken}</div>
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ color: '#6a6a8a', fontSize: '10px' }}>Daily</div>
-                  <div style={{ color: '#fff' }}>${data.dailyEarningsUSD?.toFixed(2) || '0'}</div>
+                <div>
+                  <div style={{ color: colors.textDim, fontSize: '10px', fontWeight: 500 }}>TO</div>
+                  <div style={{ color: colors.text, fontWeight: 600 }}>{data.toAmount.toFixed(4)} {data.toToken}</div>
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ color: '#6a6a8a', fontSize: '10px' }}>Weekly</div>
-                  <div style={{ color: '#fff' }}>${data.weeklyEarningsUSD?.toFixed(2) || '0'}</div>
+                <div>
+                  <div style={{ color: colors.textDim, fontSize: '10px', fontWeight: 500 }}>VALUE</div>
+                  <div style={{ color: colors.text, fontWeight: 600 }}>${data.toAmountUSD.toFixed(2)}</div>
+                </div>
+                <div>
+                  <div style={{ color: colors.textDim, fontSize: '10px', fontWeight: 500 }}>GAS</div>
+                  <div style={{ color: colors.text, fontWeight: 600 }}>${data.gasCostUSD.toFixed(2)}</div>
                 </div>
               </div>
             </div>
           </div>
-        )}
-        <div style={{ marginBottom: '20px' }}>
-          <div className="grid grid-cols-2 gap-4">
+
+          {/* LP Earnings */}
+          {data.lpAPR !== null && (
+            <div style={{ marginBottom: '12px' }}>
+              <h3 style={{ color: colors.textDim, fontSize: '10px', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+                LP Earnings
+              </h3>
+              <div style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: '3px', padding: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', fontSize: '12px' }}>
+                  <div>
+                    <div style={{ color: colors.textDim, fontSize: '10px', fontWeight: 500 }}>APR</div>
+                    <div style={{ color: colors.green, fontWeight: 700 }}>{data.lpAPR}%</div>
+                  </div>
+                  <div>
+                    <div style={{ color: colors.textDim, fontSize: '10px', fontWeight: 500 }}>DAILY</div>
+                    <div style={{ color: colors.text, fontWeight: 600 }}>${data.dailyEarningsUSD?.toFixed(2) || '0'}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: colors.textDim, fontSize: '10px', fontWeight: 500 }}>WEEKLY</div>
+                    <div style={{ color: colors.text, fontWeight: 600 }}>${data.weeklyEarningsUSD?.toFixed(2) || '0'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Scenarios */}
+          <div style={{ marginBottom: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
-              <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>Stress Tests</h3>
-              <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '8px' }}>
+              <h3 style={{ color: colors.textDim, fontSize: '10px', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+                Stress Tests
+              </h3>
+              <div style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: '3px', padding: '8px' }}>
                 {data.stressTests.map((test, i) => (
-                  <div key={i} className="flex justify-between" style={{ padding: '4px 0', fontSize: '12px' }}>
-                    <span style={{ color: '#6a6a8a' }}>{test.label}</span>
-                    <span style={{ color: '#ef4444' }}>${test.pnlUSD.toFixed(2)}</span>
+                  <div 
+                    key={i} 
+                    style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      padding: '3px 0', 
+                      fontSize: '11px',
+                      borderBottom: i < data.stressTests.length - 1 ? `1px solid ${colors.border}` : 'none'
+                    }}
+                  >
+                    <span style={{ color: colors.textDim, fontWeight: 500 }}>{test.label}</span>
+                    <span style={{ color: colors.red, fontWeight: 600 }}>${test.pnlUSD.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
             </div>
             <div>
-              <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>Profit Scenarios</h3>
-              <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '8px' }}>
+              <h3 style={{ color: colors.textDim, fontSize: '10px', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+                Profit Scenarios
+              </h3>
+              <div style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: '3px', padding: '8px' }}>
                 {data.profitScenarios.map((scenario, i) => (
-                  <div key={i} className="flex justify-between" style={{ padding: '4px 0', fontSize: '12px' }}>
-                    <span style={{ color: '#6a6a8a' }}>{scenario.label}</span>
-                    <span style={{ color: '#22c55e' }}>+${scenario.pnlUSD.toFixed(2)}</span>
+                  <div 
+                    key={i} 
+                    style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      padding: '3px 0', 
+                      fontSize: '11px',
+                      borderBottom: i < data.profitScenarios.length - 1 ? `1px solid ${colors.border}` : 'none'
+                    }}
+                  >
+                    <span style={{ color: colors.textDim, fontWeight: 500 }}>{scenario.label}</span>
+                    <span style={{ color: colors.green, fontWeight: 600 }}>+${scenario.pnlUSD.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-        </div>
-        <div style={{ marginBottom: '20px' }}>
-          <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>Trust Score</h3>
-          <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '12px' }}>
-            <div className="flex items-center gap-3" style={{ marginBottom: '8px' }}>
-              <div style={{ height: '8px', flex: 1, backgroundColor: '#1a1a2a', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${data.trustScore}%`, backgroundColor: getTrustColor(data.trustScore), borderRadius: '4px' }} />
-              </div>
-              <span style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>{data.trustScore}/100</span>
-            </div>
-            <div style={{ color: '#c8c8d8', fontSize: '12px' }}>{data.trustTier}</div>
-            {data.trustReasons.length > 0 && (
-              <ul style={{ marginTop: '8px', paddingLeft: '16px' }}>
-                {data.trustReasons.map((reason, i) => (
-                  <li key={i} style={{ color: '#6a6a8a', fontSize: '11px' }}>• {reason}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-        <div style={{ marginBottom: '20px' }}>
-          <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>Degen Score</h3>
-          <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '12px' }}>
-            <div className="flex items-center gap-3">
-              <div style={{ height: '8px', flex: 1, backgroundColor: '#1a1a2a', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${data.degenScore}%`, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', borderRadius: '4px' }} />
-              </div>
-              <span style={{ color: '#8b5cf6', fontSize: '13px' }}>{data.degenScore} · {data.degenLabel}</span>
-            </div>
-          </div>
-        </div>
-        {data.warnings.length > 0 && (
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>Warnings</h3>
-            <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '12px' }}>
-              {data.warnings.map((warning, i) => (
-                <div key={i} style={{ padding: '6px 0', fontSize: '12px', color: warning.includes('🚨') ? '#ef4444' : warning.includes('⚠️') ? '#eab308' : '#c8c8d8', borderBottom: i < data.warnings.length - 1 ? '0.5px solid #1a1a2a' : 'none' }}>
-                  {warning}
+
+          {/* Trust Score */}
+          <div style={{ marginBottom: '12px' }}>
+            <h3 style={{ color: colors.textDim, fontSize: '10px', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+              Trust Score
+            </h3>
+            <div style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: '3px', padding: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <div style={{ height: '6px', flex: 1, backgroundColor: colors.surface, borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${data.trustScore}%`, backgroundColor: getTrustColor(data.trustTier), borderRadius: '2px' }} />
                 </div>
-              ))}
+                <span style={{ color: colors.text, fontSize: '13px', fontWeight: 700 }}>{data.trustScore}</span>
+              </div>
+              <div style={{ color: getTrustColor(data.trustTier), fontSize: '12px', fontWeight: 600 }}>{data.trustTier}</div>
             </div>
           </div>
-        )}
-        {data.toTokenMetadata && (
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ color: '#6a6a8a', fontSize: '12px', marginBottom: '8px' }}>Token Info</h3>
-            <div style={{ backgroundColor: '#0e0e1e', borderRadius: '8px', padding: '12px', fontSize: '12px' }}>
-              <div style={{ color: '#fff', marginBottom: '4px' }}>{data.toTokenMetadata.name} ({data.toTokenMetadata.symbol})</div>
-              <div style={{ color: '#6a6a8a' }}>Liquidity: ${data.toTokenMetadata.liquidity.toLocaleString()}</div>
-              <div style={{ color: '#6a6a8a' }}>24h Volume: ${data.toTokenMetadata.volume24h.toLocaleString()}</div>
+
+          {/* Degen Score */}
+          <div style={{ marginBottom: '12px' }}>
+            <h3 style={{ color: colors.textDim, fontSize: '10px', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+              Degen Score
+            </h3>
+            <div style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: '3px', padding: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ height: '6px', flex: 1, backgroundColor: colors.surface, borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${data.degenScore}%`, backgroundColor: colors.accent, borderRadius: '2px' }} />
+                </div>
+                <span style={{ color: colors.accent, fontSize: '12px', fontWeight: 600 }}>{data.degenScore} · {data.degenLabel}</span>
+              </div>
             </div>
           </div>
-        )}
-        <div style={{ fontSize: '10px', color: '#4a4a6a', textAlign: 'center', borderTop: '0.5px solid #1a1a2a', paddingTop: '16px' }}>
-          This simulation uses real market data but cannot predict future prices. Always do your own research and never invest more than you can afford to lose.
-          <br /><br />
-          ArbiSafe is registered on the ERC-8004 Identity Registry as Agent #162 on Arbitrum Sepolia. Registration TX: 0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a
+
+          {/* Warnings */}
+          {data.warnings.length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <h3 style={{ color: colors.textDim, fontSize: '10px', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase' }}>
+                Warnings
+              </h3>
+              <div style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}`, borderRadius: '3px', padding: '8px' }}>
+                {data.warnings.map((warning, i) => (
+                  <div 
+                    key={i} 
+                    style={{ 
+                      padding: '3px 0', 
+                      fontSize: '11px', 
+                      color: warning.includes('🚨') ? colors.red : warning.includes('⚠️') ? colors.yellow : colors.textMuted,
+                      fontWeight: warning.includes('🚨') || warning.includes('⚠️') ? 600 : 500,
+                      borderBottom: i < data.warnings.length - 1 ? `1px solid ${colors.border}` : 'none'
+                    }}
+                  >
+                    {warning}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ fontSize: '10px', color: colors.textDim, textAlign: 'center', fontWeight: 500, marginTop: '16px' }}>
+            ArbiSafe Agent #162 — ERC-8004 Registered
+          </div>
         </div>
       </div>
     </div>

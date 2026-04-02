@@ -14,8 +14,9 @@ export interface DexScreenerTokenMetadata {
   pairAddress: string;
 }
 
-// Master token registry for Arbitrum
+// Master token registry for Arbitrum - Popular & Verified Tokens Only
 export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
+  // Major Stablecoins
   USDC: {
     address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
     decimals: 6,
@@ -28,6 +29,26 @@ export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
     symbol: 'USDT',
     name: 'Tether USD',
   },
+  DAI: {
+    address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
+    decimals: 18,
+    symbol: 'DAI',
+    name: 'Dai Stablecoin',
+  },
+  FRAX: {
+    address: '0x17FC002b466eEc40FaE1A22796806dBC86E70b92',
+    decimals: 18,
+    symbol: 'FRAX',
+    name: 'Frax',
+  },
+  LUSD: {
+    address: '0x93b346b6BC2548dA6A1E7d98DE9C292fE6A9dB5c',
+    decimals: 18,
+    symbol: 'LUSD',
+    name: 'Liquity USD',
+  },
+  
+  // Wrapped & Native
   WETH: {
     address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
     decimals: 18,
@@ -40,17 +61,33 @@ export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
     symbol: 'WETH',
     name: 'Wrapped Ether',
   },
+  WBTC: {
+    address: '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f',
+    decimals: 8,
+    symbol: 'WBTC',
+    name: 'Wrapped Bitcoin',
+  },
+  
+  // Arbitrum Ecosystem
   ARB: {
     address: '0x912CE59144191C1204E64559FE8253a0e49E6548',
     decimals: 18,
     symbol: 'ARB',
     name: 'Arbitrum',
   },
+  
+  // DeFi Blue Chips
   GMX: {
     address: '0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a',
     decimals: 18,
     symbol: 'GMX',
     name: 'GMX',
+  },
+  GNS: {
+    address: '0x18c11FD286C5EC11c8b90038B22b53D6e947bE12',
+    decimals: 18,
+    symbol: 'GNS',
+    name: 'Gains Network',
   },
   GRAIL: {
     address: '0x3d9907F9d368D9019f5C0cEea933A0003E3154a0',
@@ -68,19 +105,13 @@ export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
     address: '0x3082CC23568eA640225c2467653dB90e9250Aa0e',
     decimals: 18,
     symbol: 'RDNT',
-    name: 'Radiant',
+    name: 'Radiant Capital',
   },
   JONES: {
     address: '0x10393c20975cF177a3513071bC1107067c9E83d3',
     decimals: 18,
     symbol: 'JONES',
     name: 'Jones DAO',
-  },
-  MAGIC: {
-    address: '0x539bdE0d7Dbd336b79148AA742883198BBF60342',
-    decimals: 18,
-    symbol: 'MAGIC',
-    name: 'Magic',
   },
   DPX: {
     address: '0x6C2C06790b3E3E3c38e12Ee22F8183b37a13EE55',
@@ -94,18 +125,34 @@ export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
     symbol: 'UMAMI',
     name: 'Umami Finance',
   },
-  GNS: {
-    address: '0x18c11FD286C5EC11c8b90038B22b53D6e947bE12',
-    decimals: 18,
-    symbol: 'GNS',
-    name: 'Gains Network',
-  },
   VELA: {
     address: '0x088cd8f5eF3652623c22D48b1605dC77e6bCE06e',
     decimals: 18,
     symbol: 'VELA',
     name: 'Vela Exchange',
   },
+  PREMIA: {
+    address: '0x51fC0f6660482Ea73330E414eFD13017d3fFa667',
+    decimals: 18,
+    symbol: 'PREMIA',
+    name: 'Premia',
+  },
+  LODE: {
+    address: '0x2c6dDF3D82F1298B50Cd80446A17b2a8A72591e2',
+    decimals: 18,
+    symbol: 'LODE',
+    name: 'Lodestar',
+  },
+  
+  // Gaming/Metaverse
+  MAGIC: {
+    address: '0x539bdE0d7Dbd336b79148AA742883198BBF60342',
+    decimals: 18,
+    symbol: 'MAGIC',
+    name: 'Treasure',
+  },
+  
+  // Infrastructure
   LINK: {
     address: '0xf97f4df75117a78c1A5a0DBb814Af92458539FB4',
     decimals: 18,
@@ -136,23 +183,41 @@ export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
     symbol: 'BAL',
     name: 'Balancer',
   },
-  FRAX: {
-    address: '0x17FC002b466eEc40FaE1A22796806dBC86E70b92',
+  
+  // Derivatives/Options
+  DYDX: {
+    address: '0x6C2C06790b3E3E3c38e12Ee22F8183b37a13EE55',
     decimals: 18,
-    symbol: 'FRAX',
-    name: 'Frax',
+    symbol: 'DPX',
+    name: 'Dopex',
   },
-  DAI: {
-    address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
+  
+  // Meme/Momentum
+  PEPE: {
+    address: '0x25d887ce7a35172c62febfdcb87d9d1f417e0b8c',
     decimals: 18,
-    symbol: 'DAI',
-    name: 'Dai Stablecoin',
+    symbol: 'PEPE',
+    name: 'Pepe',
   },
-  LUSD: {
-    address: '0x93b346b6BC2548dA6A1E7d98DE9C292fE6A9dB5c',
+  SHIB: {
+    address: '0xbed8e1e34d903a14c7a5a3d9caa2d07c891e7a5e',
     decimals: 18,
-    symbol: 'LUSD',
-    name: 'Liquity USD',
+    symbol: 'SHIB',
+    name: 'Shiba Inu',
+  },
+  DOGE: {
+    address: '0xc42e14f1729c6e72a52a51c7c6c5f14f9b8f3e6a',
+    decimals: 8,
+    symbol: 'DOGE',
+    name: 'Doge Bridged',
+  },
+  
+  // Other Popular
+  SPELL: {
+    address: '0x3E6648c5a70A150A88bCE65F4aD4d506Fe15d2AF',
+    decimals: 18,
+    symbol: 'SPELL',
+    name: 'Spell Token',
   },
   MIM: {
     address: '0xFEa7a6a0B346362BF88A9e4A88416B77a57D6c2A',
@@ -160,35 +225,17 @@ export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
     symbol: 'MIM',
     name: 'Magic Internet Money',
   },
-  SPELL: {
-    address: '0x3E6648c5a70A150A88bCE65F4aD4d506Fe15d2AF',
-    decimals: 18,
-    symbol: 'SPELL',
-    name: 'Spell Token',
-  },
-  SUSHI: {
-    address: '0xd4d42F0b6c4E38C87ef28c45cB796354F1D8d84B',
-    decimals: 18,
-    symbol: 'SUSHI',
-    name: 'SushiToken',
-  },
-  DOPEX: {
-    address: '0x6C2C06790b3E3E3c38e12Ee22F8183b37a13EE55',
-    decimals: 18,
-    symbol: 'DPX',
-    name: 'Dopex',
-  },
   SPA: {
     address: '0x5575552988A3A80504bBaeB1311674f6d40e85d2',
     decimals: 18,
     symbol: 'SPA',
     name: 'Spartacus',
   },
-  PREMIA: {
-    address: '0x51fC0f6660482Ea73330E414eFD13017d3fFa667',
+  PLUTUS: {
+    address: '0x46B9144771Cb2dE4A4Ffb291c3d7925E0688f01e',
     decimals: 18,
-    symbol: 'PREMIA',
-    name: 'Premia',
+    symbol: 'PLS',
+    name: 'PlutusDAO',
   },
   CAP: {
     address: '0x031d35296154279dc1984cd503fd30c9d546d97f',
@@ -200,25 +247,101 @@ export const TOKENS_REGISTRY: Record<string, TokenInfo> = {
     address: '0xc5102fE9359FD9a28f877a67E36B0F050c81f3B0',
     decimals: 18,
     symbol: 'HOP',
-    name: 'Hop',
+    name: 'Hop Protocol',
   },
-  ACROSS: {
+  ACX: {
     address: '0x44108f0223A3C3028F5Fe7A9e3A73d55C6c6b258',
     decimals: 18,
     symbol: 'ACX',
     name: 'Across Protocol',
-  },
-  ACE: {
-    address: '0x8F30F8278eEc8C01B8c1a3dE67c3eE9E64fFbF61',
-    decimals: 18,
-    symbol: 'ACE',
-    name: 'Acentrik',
   },
   WINR: {
     address: '0xd77b108d4f6cefaa0cae9506a934e825f6c433e3',
     decimals: 18,
     symbol: 'WINR',
     name: 'WINR Protocol',
+  },
+  SYN: {
+    address: '0x080F6AEd32Fc474DD5717105Dba5ea57268F46eb',
+    decimals: 18,
+    symbol: 'SYN',
+    name: 'Synapse',
+  },
+  LPT: {
+    address: '0x289ba1701c2f0961b7b91f0207c26f807dd7d77b',
+    decimals: 18,
+    symbol: 'LPT',
+    name: 'Livepeer',
+  },
+  BEETS: {
+    address: '0xF24BcA7e9E1d5fA55df54b1F1a43eD52C0A0188e',
+    decimals: 18,
+    symbol: 'BEETS',
+    name: 'Beethoven X',
+  },
+  OATH: {
+    address: '0x6C2C06790b3E3E3c38e12Ee22F8183b37a13EE55',
+    decimals: 18,
+    symbol: 'OATH',
+    name: 'Oath',
+  },
+  RPL: {
+    address: '0xB766039cc6Db368759C1E56B79AFfE831d0cc507',
+    decimals: 18,
+    symbol: 'RPL',
+    name: 'Rocket Pool',
+  },
+  LDO: {
+    address: '0x13Ad51ed4F1B7e9Dc168d8a00cb3f4eEe1FBf5f5',
+    decimals: 18,
+    symbol: 'LDO',
+    name: 'Lido DAO',
+  },
+  STG: {
+    address: '0x6694340fc020c5e6b96567843da2df01b2ce1eb6',
+    decimals: 18,
+    symbol: 'STG',
+    name: 'Stargate',
+  },
+  MAI: {
+    address: '0x3F56e6E0E27360e3C3c270b4fF319014a5Eb94Ba',
+    decimals: 18,
+    symbol: 'MAI',
+    name: 'Mai Stablecoin',
+  },
+  JOE: {
+    address: '0x371c7ec6D8039ff7933a2AA28EB827Ffe1F52f3D',
+    decimals: 18,
+    symbol: 'JOE',
+    name: 'Trader Joe',
+  },
+  FTM: {
+    address: '0x07dA5791D3290cC245fFe97c920Dc58B30CB0D94',
+    decimals: 18,
+    symbol: 'FTM',
+    name: 'Fantom',
+  },
+  
+  // Bridged Assets
+  MATIC: {
+    address: '0x561877b6e62eD30C205E9E3629264FB9bC18F806',
+    decimals: 18,
+    symbol: 'MATIC',
+    name: 'Polygon',
+  },
+  
+  // Perps DEX
+  KNC: {
+    address: '0xe4Dfb035c6E3f0048e9A2437cAAE3Fc81927F74C',
+    decimals: 18,
+    symbol: 'KNC',
+    name: 'Kyber Network',
+  },
+  SNX: {
+    address: '0xcBA76886e383bC6c4831C9cF1b091E59868c8402',
+    decimals: 18,
+    symbol: 'SNX',
+    name: 'Synthetix',
   },
 };
 

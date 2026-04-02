@@ -1,5 +1,5 @@
-import { resolveToken, getTokenMetadata } from './tokens';
-import { getTokenPrice } from './api/price';
+import { resolveToken, getTokenMetadata, getTokenByTicker } from './tokens';
+import { getTokenPrice, searchTokenOnDexScreener } from './api/price';
 import { getTrustScore } from './api/trust';
 import { getGasEstimate } from './api/gas';
 import { getPoolData } from './api/pool';
@@ -8,44 +8,60 @@ export interface TokenPriceResult {
   symbol: string;
   name: string;
   priceUSD: number;
-  change24h: number | null;
+  change24h: number;
   volume24h: number;
   liquidity: number;
   pairAddress: string;
   dexscreenerUrl: string;
+  confidence: number; // Data reliability score 0-1
 }
 
 export async function checkTokenPrice(tokenInput: string): Promise<{ data: TokenPriceResult | null; error: string | null }> {
   try {
     let address = resolveToken(tokenInput);
     
-    if (!address) {
-      if (tokenInput.toLowerCase().startsWith('0x') && tokenInput.length === 42) {
-        address = tokenInput;
-      } else {
-        return { data: null, error: `Token "${tokenInput}" not found in registry and is not a valid contract address` };
+    // If not in registry, try searching DexScreener for the ticker
+    if (!address && !tokenInput.toLowerCase().startsWith('0x')) {
+      const searchResults = await searchTokenOnDexScreener(tokenInput);
+      if (searchResults && searchResults.length > 0) {
+        // Use the best match (highest liquidity)
+        address = searchResults[0].address;
       }
+    }
+    
+    // If it's an address, use it directly
+    if (!address && tokenInput.toLowerCase().startsWith('0x') && tokenInput.length === 42) {
+      address = tokenInput;
+    }
+    
+    if (!address) {
+      return { 
+        data: null, 
+        error: `Token "${tokenInput}" not found. Try using a verified ticker (e.g., ARB, GMX, MAGIC) or contract address (0x...)` 
+      };
     }
 
     const priceData = await getTokenPrice(address);
     const metadata = await getTokenMetadata(address);
 
     if (!priceData && !metadata) {
-      return { data: null, error: `Failed to fetch price data for ${tokenInput}` };
+      return { data: null, error: `No trading data found for ${tokenInput} on Arbitrum` };
     }
 
     const pairAddress = priceData?.pairAddress || metadata?.pairAddress || '';
+    const confidence = priceData?.confidence || 0;
     
     return {
       data: {
-        symbol: priceData?.symbol || metadata?.symbol || tokenInput,
-        name: metadata?.name || priceData?.symbol || tokenInput,
+        symbol: priceData?.symbol || metadata?.symbol || tokenInput.toUpperCase(),
+        name: metadata?.name || priceData?.symbol || tokenInput.toUpperCase(),
         priceUSD: priceData ? parseFloat(priceData.priceUsd) : (metadata?.price || 0),
-        change24h: null,
+        change24h: priceData ? parseFloat(priceData.priceChange24h) : 0,
         volume24h: priceData ? parseFloat(priceData.volume24h) : (metadata?.volume24h || 0),
         liquidity: priceData ? parseFloat(priceData.liquidityUsd) : (metadata?.liquidity || 0),
         pairAddress,
         dexscreenerUrl: pairAddress ? `https://dexscreener.com/arbitrum/${pairAddress}` : `https://dexscreener.com/arbitrum/${address}`,
+        confidence,
       },
       error: null,
     };
@@ -170,7 +186,7 @@ export interface PoolInfoResult {
   tvlUSD: number;
   volume24h: number;
   feeTier: string;
-  txCount24h: number;
+  txns24h: { buys: number; sells: number };
 }
 
 export async function getPoolInfo(tokenA: string, tokenB: string): Promise<{ data: PoolInfoResult | null; error: string | null }> {
@@ -194,7 +210,7 @@ export async function getPoolInfo(tokenA: string, tokenB: string): Promise<{ dat
         tvlUSD: parseFloat(poolData.tvlUSD),
         volume24h: parseFloat(poolData.volume24h),
         feeTier: poolData.feeTier,
-        txCount24h: poolData.txCount24h,
+        txns24h: poolData.txns24h,
       },
       error: null,
     };
