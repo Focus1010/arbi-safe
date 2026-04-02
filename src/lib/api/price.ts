@@ -1,11 +1,13 @@
 import axios from 'axios';
+import { TOKENS_REGISTRY } from '@/lib/tokens';
 
+// Export TOKENS for backward compatibility
 export const TOKENS = {
-  ARB: '0x912CE59144191C1204E64559FE8253a0e49E6548',
-  USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-  USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1c0b69FCbb9',
-  WETH: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-  GMX: '0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a',
+  ARB: TOKENS_REGISTRY.ARB.address,
+  USDC: TOKENS_REGISTRY.USDC.address,
+  USDT: TOKENS_REGISTRY.USDT.address,
+  WETH: TOKENS_REGISTRY.WETH.address,
+  GMX: TOKENS_REGISTRY.GMX.address,
 } as const;
 
 export interface TokenPriceData {
