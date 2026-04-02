@@ -172,9 +172,7 @@ export default function Home() {
         borderBottom: '0.5px solid #1e1e2e'
       }}>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: '#1a3a6a' }}>
-            <span className="text-sm">🛡️</span>
-          </div>
+          <img src="/logo.png" width="28" height="28" style={{ borderRadius: '6px' }} alt="ArbiSafe" />
           <span style={{ color: '#ffffff', fontSize: '15px', fontWeight: 500 }}>ArbiSafe</span>
         </div>
         <div className="flex items-center gap-3">

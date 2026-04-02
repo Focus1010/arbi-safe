@@ -106,7 +106,7 @@ export default function StrategyCard({ result, amountUSD }: StrategyCardProps) {
         <div className="flex justify-between items-start mb-6">
           {/* Logo */}
           <div className="flex items-center gap-1">
-            <span className="text-lg">🛡️</span>
+            <img src="/logo.png" width="20" height="20" style={{ borderRadius: '4px' }} alt="ArbiSafe" />
             <span className="text-sm font-medium" style={{ color: '#6b7280' }}>
               ArbiSafe
             </span>
