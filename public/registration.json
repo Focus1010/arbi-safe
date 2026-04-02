@@ -1,0 +1,10 @@
+{
+  "tokenId": "162",
+  "txHash": "0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a",
+  "arbiscanUrl": "https://sepolia.arbiscan.io/tx/0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a",
+  "registeredAt": "2026-04-02T07:31:04.308Z",
+  "walletAddress": "0x9431a4E212cfcadC2F37381b47765b2d6Bcd74cc",
+  "tokenURI": "https://arbisafe.vercel.app/agent.json",
+  "contractAddress": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "network": "Arbitrum Sepolia"
+}

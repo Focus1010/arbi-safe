@@ -1,0 +1,18 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "ArbiSafe",
+  "description": "ArbiSafe simulates any DeFi strategy on Arbitrum with real onchain data before you execute it. Get real swap quotes, stress test scenarios, protocol trust scores, and a shareable Strategy Card — all without risking a single dollar.",
+  "image": "https://arbisafe.vercel.app/og.png",
+  "services": [
+    {
+      "name": "web",
+      "endpoint": "https://arbisafe.vercel.app/"
+    },
+    {
+      "name": "API",
+      "endpoint": "https://arbisafe.vercel.app/api/simulate"
+    }
+  ],
+  "x402Support": false,
+  "active": true
+}

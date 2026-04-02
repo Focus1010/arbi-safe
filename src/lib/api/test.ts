@@ -1,7 +1,8 @@
-import { getTokenPrice, TOKENS } from './price.ts';
-import { getPoolData, getSwapQuote } from './pool.ts';
-import { getGasEstimate } from './gas.ts';
-import { getTrustScore } from './trust.ts';
+import { getTokenPrice, TOKENS } from './price';
+import { getPoolData, getSwapQuote } from './pool';
+import { getGasEstimate } from './gas';
+import { getTrustScore } from './trust';
+import { simulateStrategy } from '../simulate';
 
 async function runTests() {
   console.log('🧪 Running ArbiSafe API Tests\n');
@@ -133,7 +134,96 @@ async function runTests() {
     console.log('❌ Failed to fetch trust score');
   }
 
-  console.log('\n' + '='.repeat(50));
+  // SIMULATION TESTS
+  console.log('\n\n🎮 SIMULATION TESTS');
+  console.log('='.repeat(70));
+
+  // Scenario 1 - Simple swap
+  console.log('\n📊 Scenario 1: Simple Swap (USDC → ARB, $200, Camelot)');
+  console.log('-'.repeat(70));
+  const sim1 = await simulateStrategy({
+    fromToken: 'USDC',
+    toToken: 'ARB',
+    amountUSD: 200,
+    action: 'swap',
+    protocol: 'camelot',
+  });
+  console.log('Swap Details:');
+  console.log(`  From: ${sim1.fromAmount.toFixed(4)} ${sim1.fromToken}`);
+  console.log(`  To: ${sim1.toAmount.toFixed(4)} ${sim1.toToken} ($${sim1.toAmountUSD.toFixed(2)})`);
+  console.log(`  Slippage: ${sim1.slippagePercent}%`);
+  console.log(`  Gas Cost: $${sim1.gasCostUSD.toFixed(4)}`);
+  console.log(`  Net Profit: $${sim1.netProfitUSD.toFixed(2)}`);
+  console.log('\nStress Tests:');
+  sim1.stressTests.forEach((test) => {
+    console.log(`  ${test.label}: $${test.portfolioValueUSD.toFixed(2)} (PnL: $${test.pnlUSD.toFixed(2)})`);
+  });
+  console.log(`\nTrust Score: ${sim1.trustScore}/100 (${sim1.trustTier})`);
+  console.log(`Degen Score: ${sim1.degenScore}/100 - ${sim1.degenLabel}`);
+  console.log('\nWarnings:');
+  sim1.warnings.forEach((w) => console.log(`  ${w}`));
+  console.log(`\nSimulated At: ${sim1.simulatedAt}`);
+
+  // Scenario 2 - LP position
+  console.log('\n\n🏊 Scenario 2: LP Position (USDC → WETH, $500, Camelot)');
+  console.log('-'.repeat(70));
+  const sim2 = await simulateStrategy({
+    fromToken: 'USDC',
+    toToken: 'WETH',
+    amountUSD: 500,
+    action: 'lp',
+    protocol: 'camelot',
+  });
+  console.log('LP Details:');
+  console.log(`  From: ${sim2.fromAmount.toFixed(4)} ${sim2.fromToken}`);
+  console.log(`  To: ${sim2.toAmount.toFixed(6)} ${sim2.toToken}`);
+  console.log(`  LP APR: ${sim2.lpAPR}%`);
+  console.log(`  Daily Earnings: $${sim2.dailyEarningsUSD?.toFixed(4)}`);
+  console.log(`  Weekly Earnings: $${sim2.weeklyEarningsUSD?.toFixed(2)}`);
+  console.log(`  Gas Cost: $${sim2.gasCostUSD.toFixed(4)}`);
+  console.log(`  Net Profit: $${sim2.netProfitUSD.toFixed(2)}`);
+  console.log('\nStress Tests:');
+  sim2.stressTests.forEach((test) => {
+    console.log(`  ${test.label}: $${test.portfolioValueUSD.toFixed(2)} (PnL: $${test.pnlUSD.toFixed(2)})`);
+  });
+  console.log(`\nTrust Score: ${sim2.trustScore}/100 (${sim2.trustTier})`);
+  console.log(`Degen Score: ${sim2.degenScore}/100 - ${sim2.degenLabel}`);
+  console.log('\nWarnings:');
+  sim2.warnings.forEach((w) => console.log(`  ${w}`));
+  console.log(`\nSimulated At: ${sim2.simulatedAt}`);
+
+  // Scenario 3 - Risky swap (trigger degen score)
+  console.log('\n\n🎰 Scenario 3: Risky LP (USDC → ARB, $6000, Unknown Protocol)');
+  console.log('-'.repeat(70));
+  const sim3 = await simulateStrategy({
+    fromToken: 'USDC',
+    toToken: 'ARB',
+    amountUSD: 6000,
+    action: 'lp',
+    protocol: 'unknownprotocol',
+  });
+  console.log('Risky Strategy Details:');
+  console.log(`  From: ${sim3.fromAmount.toFixed(4)} ${sim3.fromToken}`);
+  console.log(`  To: ${sim3.toAmount.toFixed(4)} ${sim3.toToken} ($${sim3.toAmountUSD.toFixed(2)})`);
+  console.log(`  Slippage: ${sim3.slippagePercent}%`);
+  console.log(`  Gas Cost: $${sim3.gasCostUSD.toFixed(4)}`);
+  console.log(`  Net Profit: $${sim3.netProfitUSD.toFixed(2)}`);
+  if (sim3.lpAPR) {
+    console.log(`  LP APR: ${sim3.lpAPR}%`);
+    console.log(`  Daily Earnings: $${sim3.dailyEarningsUSD?.toFixed(4)}`);
+    console.log(`  Weekly Earnings: $${sim3.weeklyEarningsUSD?.toFixed(2)}`);
+  }
+  console.log('\nStress Tests:');
+  sim3.stressTests.forEach((test) => {
+    console.log(`  ${test.label}: $${test.portfolioValueUSD.toFixed(2)} (PnL: $${test.pnlUSD.toFixed(2)})`);
+  });
+  console.log(`\nTrust Score: ${sim3.trustScore}/100 (${sim3.trustTier})`);
+  console.log(`Degen Score: ${sim3.degenScore}/100 - ${sim3.degenLabel}`);
+  console.log('\nWarnings:');
+  sim3.warnings.forEach((w) => console.log(`  ${w}`));
+  console.log(`\nSimulated At: ${sim3.simulatedAt}`);
+
+  console.log('\n' + '='.repeat(70));
   console.log('✨ All tests completed!');
 }
 

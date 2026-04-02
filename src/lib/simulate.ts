@@ -1,7 +1,7 @@
-import { getTokenPrice, TOKENS } from './api/price.ts';
-import { getPoolData, getSwapQuote } from './api/pool.ts';
-import { getGasEstimate } from './api/gas.ts';
-import { getTrustScore } from './api/trust.ts';
+import { getTokenPrice, TOKENS } from './api/price';
+import { getPoolData, getSwapQuote } from './api/pool';
+import { getGasEstimate } from './api/gas';
+import { getTrustScore } from './api/trust';
 
 export interface SimulateInput {
   fromToken: string;

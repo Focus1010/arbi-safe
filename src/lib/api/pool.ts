@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { TOKENS } from './price.ts';
+import { TOKENS } from './price';
 
 const DEXSCREENER_API_URL = 'https://api.dexscreener.com/latest/dex';
 

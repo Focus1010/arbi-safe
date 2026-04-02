@@ -1,4 +1,4 @@
-import { simulateStrategy } from './simulate.ts';
+import { simulateStrategy } from './simulate';
 
 async function testSimulate() {
   console.log('🧪 Testing simulateStrategy\n');
