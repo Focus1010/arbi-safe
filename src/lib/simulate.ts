@@ -2,7 +2,25 @@ import { getTokenPrice, TOKENS } from './api/price';
 import { getPoolData, getSwapQuote } from './api/pool';
 import { getGasEstimate } from './api/gas';
 import { getTrustScore } from './api/trust';
-import { resolveToken, getTokenMetadata, DexScreenerTokenMetadata } from './tokens';
+import { lookupToken, TokenData } from './api/price';
+
+/**
+ * Resolve token input and fetch metadata from DexScreener ONLY
+ * NEVER use local registry for token identity
+ */
+async function resolveAndFetch(input: string): Promise<TokenData & { address: string } | null> {
+  const trimmed = input.trim();
+  
+  // If it's an address, use directly
+  if (trimmed.toLowerCase().startsWith('0x') && trimmed.length === 42) {
+    const data = await lookupToken(trimmed.toLowerCase());
+    return data ? { ...data, address: trimmed.toLowerCase() } : null;
+  }
+  
+  // If it's a ticker, search on DexScreener (NOT from registry)
+  const searchResult = await lookupToken(trimmed.toUpperCase());
+  return searchResult ? { ...searchResult, address: searchResult.address } : null;
+}
 
 export interface SimulateInput {
   fromToken: string;
@@ -83,41 +101,29 @@ export async function simulateStrategy(input: SimulateInput): Promise<SimulateOu
   const warnings: string[] = [];
   let usedPriceFallback = false;
 
-  // STEP 1: Resolve token inputs (ticker or address) and fetch prices
+  // STEP 1: Resolve tokens and ALWAYS fetch metadata from DexScreener (never use local registry for display)
   let fromTokenPrice = 1;
   let toTokenPrice = 1;
-  let fromTokenAddress = resolveToken(input.fromToken);
-  let toTokenAddress = resolveToken(input.toToken);
-
-  // Track original inputs for display - fetch symbols from DexScreener if using contract addresses
-  let fromTokenDisplay = input.fromToken.toUpperCase();
-  let toTokenDisplay = input.toToken.toUpperCase();
-
-  // If input is a contract address, try to get the symbol from metadata
-  if (fromTokenAddress && input.fromToken.toLowerCase().startsWith('0x')) {
-    try {
-      const metadata = await getTokenMetadata(fromTokenAddress);
-      if (metadata?.symbol) {
-        fromTokenDisplay = metadata.symbol;
-      } else {
-        fromTokenDisplay = `${input.fromToken.slice(0, 6)}...${input.fromToken.slice(-4)}`;
-      }
-    } catch {
-      fromTokenDisplay = `${input.fromToken.slice(0, 6)}...${input.fromToken.slice(-4)}`;
-    }
+  
+  // Get addresses and metadata from DexScreener ONLY
+  const fromTokenData = await resolveAndFetch(input.fromToken);
+  const toTokenData = await resolveAndFetch(input.toToken);
+  
+  const fromTokenAddress = fromTokenData?.address || null;
+  const toTokenAddress = toTokenData?.address || null;
+  
+  // Display names ALWAYS from DexScreener, never from user input or registry
+  let fromTokenDisplay = fromTokenData?.symbol || `${input.fromToken.slice(0, 6)}...${input.fromToken.slice(-4)}`;
+  let toTokenDisplay = toTokenData?.symbol || `${input.toToken.slice(0, 6)}...${input.toToken.slice(-4)}`;
+  
+  // If no DexScreener data, show "Unknown" instead of user input
+  if (!fromTokenData) {
+    fromTokenDisplay = 'Unknown';
+    warnings.push(`⚠️ ${input.fromToken}: No DexScreener data — token may not exist on Arbitrum`);
   }
-
-  if (toTokenAddress && input.toToken.toLowerCase().startsWith('0x')) {
-    try {
-      const metadata = await getTokenMetadata(toTokenAddress);
-      if (metadata?.symbol) {
-        toTokenDisplay = metadata.symbol;
-      } else {
-        toTokenDisplay = `${input.toToken.slice(0, 6)}...${input.toToken.slice(-4)}`;
-      }
-    } catch {
-      toTokenDisplay = `${input.toToken.slice(0, 6)}...${input.toToken.slice(-4)}`;
-    }
+  if (!toTokenData) {
+    toTokenDisplay = 'Unknown';
+    warnings.push(`⚠️ ${input.toToken}: No DexScreener data — token may not exist on Arbitrum`);
   }
 
   try {
