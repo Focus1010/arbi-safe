@@ -1,9 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// Initialize both AI clients
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const gemini = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-const SYSTEM_PROMPT = `You are ArbiSafe, an expert AI agent for simulating DeFi strategies on Arbitrum. You're sharp, direct, and speak like a knowledgeable crypto-native friend — not a corporate chatbot. You use light humor, you're honest about risks, and you give clear recommendations.
+// ============================================================================
+// ROUTING LOGIC — Determine which model handles the request
+// ============================================================================
+
+function needsStructuredExtraction(message: string): boolean {
+  const lowerMsg = message.toLowerCase();
+  
+  // DeFi action keywords
+  const actionKeywords = [
+    'swap', 'trade', 'buy', 'sell', 'lp', 'liquidity', 'pool', 
+    'farm', 'yield', 'bridge', 'simulate'
+  ];
+  
+  // Check for action keywords
+  if (actionKeywords.some(keyword => lowerMsg.includes(keyword))) {
+    return true;
+  }
+  
+  // Check for contract address (0x followed by 40 hex chars)
+  if (/0x[a-fA-F0-9]{40}/.test(message)) {
+    return true;
+  }
+  
+  // Check for token ticker + dollar amount patterns
+  const tickerAmountPattern = /(?:^|\s)(?:[A-Z]{2,5}\s*\$?\d+|\$?\d+\s*[A-Z]{2,5})(?:\s|$)/i;
+  if (tickerAmountPattern.test(message)) {
+    return true;
+  }
+  
+  // Check for slash commands
+  if (message.startsWith('/simulate') || message.startsWith('/lp')) {
+    return true;
+  }
+  
+  return false;
+}
+
+const GEMINI_SYSTEM_INSTRUCTION = `You are ArbiSafe, an expert DeFi assistant and onchain strategy advisor for Arbitrum. You have deep knowledge of DeFi protocols, tokenomics, market dynamics, yield strategies, smart contract risks, and the broader crypto ecosystem.
+
+You answer questions naturally and intelligently — like a knowledgeable crypto-native friend. You explain complex DeFi concepts clearly. You discuss market conditions, protocol comparisons, risk/reward tradeoffs, tokenomics, and strategy ideas.
+
+You are NOT a robot. You have opinions. You can say things like "honestly, I think..." or "from what I've seen..." You are direct and concise.
+
+When users ask about simulating a specific trade or checking live data, tell them you'll run the numbers and that they can describe their strategy. But for general DeFi questions — just answer intelligently.
+
+Never make up current prices or live data. For anything requiring live onchain data, say you'll need to run a simulation or check the chain.`;
+
+const GROQ_SYSTEM_PROMPT = `You are ArbiSafe, an expert AI agent for simulating DeFi strategies on Arbitrum. You're sharp, direct, and speak like a knowledgeable crypto-native friend — not a corporate chatbot. You use light humor, you're honest about risks, and you give clear recommendations.
 
 You have real-time access to Arbitrum onchain data. When users describe a strategy, extract simulation parameters and trigger a simulation.
 
@@ -34,6 +85,102 @@ If someone asks about a contract address directly (0x...), acknowledge you'll lo
 If someone asks a general DeFi question (not a simulation), answer it directly and helpfully.
 Never make up token prices or protocol data — only reference what the simulation returns.`;
 
+// ============================================================================
+// HANDLER A — Gemini (General Conversation)
+// ============================================================================
+
+async function handleWithGemini(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  simulationResult?: any
+): Promise<{ response: string; model: 'gemini' }> {
+  // Convert messages to Gemini format
+  const history = messages.slice(0, -1).map(m => ({
+    role: m.role === 'assistant' ? 'model' as const : 'user' as const,
+    parts: [{ text: m.content }],
+  }));
+  
+  const currentMessage = messages[messages.length - 1]?.content || '';
+  
+  // Build content parts
+  const contentParts: any[] = [];
+  
+  // Add system instruction as context
+  contentParts.push({ text: `${GEMINI_SYSTEM_INSTRUCTION}\n\nUser message: ${currentMessage}` });
+  
+  // If simulation results provided, add them
+  if (simulationResult) {
+    contentParts.push({
+      text: `\n\n[SIMULATION RESULTS - interpret these for the user in 3-5 sentences, lead with key numbers, comment on slippage/trust/degen, end with verdict]:\n${JSON.stringify(simulationResult, null, 2)}`,
+    });
+  }
+  
+  // Start chat with history
+  const chat = gemini.startChat({
+    history,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 1024,
+    },
+  });
+  
+  const result = await chat.sendMessage(contentParts);
+  const response = result.response.text();
+  
+  return { response, model: 'gemini' };
+}
+
+// ============================================================================
+// HANDLER B — Groq (Structured DeFi Tasks)
+// ============================================================================
+
+async function handleWithGroq(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  simulationResult?: any
+): Promise<{ response: string; simulationParams: any | null; model: 'groq' }> {
+  // Build message array for Groq
+  const groqMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: GROQ_SYSTEM_PROMPT },
+    ...messages,
+  ];
+  
+  // If simulation results are provided, inject as hidden context
+  if (simulationResult) {
+    groqMessages.push({
+      role: 'user',
+      content: `[SIMULATION RESULTS - interpret these for the user in 3-5 sentences, lead with key numbers, comment on slippage/trust/degen, end with verdict]:\n${JSON.stringify(simulationResult, null, 2)}`,
+    });
+  }
+  
+  const completion = await groq.chat.completions.create({
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    messages: groqMessages,
+    temperature: 0.7,
+    max_tokens: 1024,
+  });
+  
+  let assistantResponse = completion.choices[0]?.message?.content || '';
+  
+  // Parse <simulate> block if present and strip it from response
+  let simulationParams = null;
+  const simulateMatch = assistantResponse.match(/<simulate>([\s\S]*?)<\/simulate>/);
+  
+  if (simulateMatch) {
+    try {
+      simulationParams = JSON.parse(simulateMatch[1].trim());
+    } catch {
+      console.warn('Failed to parse simulation parameters');
+    }
+    // Remove the <simulate> block from the visible response
+    assistantResponse = assistantResponse.replace(/<simulate>[\s\S]*?<\/simulate>/, '').trim();
+  }
+  
+  return { response: assistantResponse, simulationParams, model: 'groq' };
+}
+
+// ============================================================================
+// MAIN HANDLER
+// ============================================================================
+
 export async function POST(request: NextRequest) {
   try {
     const { messages, simulationResult } = await request.json();
@@ -44,59 +191,73 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    // Build message array for Groq
-    const groqMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...messages as Array<{ role: 'user' | 'assistant'; content: string }>,
-    ];
-
-    // If simulation results are provided, inject as hidden context
-    if (simulationResult) {
-      groqMessages.push({
-        role: 'user',
-        content: `[SIMULATION RESULTS - interpret these for the user in 3-5 sentences, lead with key numbers, comment on slippage/trust/degen, end with verdict]:
-${JSON.stringify(simulationResult, null, 2)}`,
-      });
-    }
-
-    let assistantResponse: string;
     
-    try {
-      const completion = await groq.chat.completions.create({
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        messages: groqMessages,
-        temperature: 0.7,
-        max_tokens: 1024,
-      });
+    // Get the last user message for routing
+    const lastUserMessage = messages
+      .filter((m: any) => m.role === 'user')
+      .pop()?.content || '';
 
-      assistantResponse = completion.choices[0]?.message?.content || '';
-    } catch (groqError) {
-      console.error('Groq API error:', groqError);
-      // Fallback response if Groq fails
-      return NextResponse.json({
-        response: "ArbiSafe's brain is having a moment. Try again in a few seconds — the LLM might be warming up. 🛡️",
-        simulationParams: null,
-      });
-    }
-
-    // Parse <simulate> block if present and strip it from response
-    let simulationParams = null;
-    const simulateMatch = assistantResponse.match(/<simulate>([\s\S]*?)<\/simulate>/);
+    // Route to appropriate handler
+    const useGroq = needsStructuredExtraction(lastUserMessage) || simulationResult;
     
-    if (simulateMatch) {
+    let response: string;
+    let simulationParams: any = null;
+    let model: 'gemini' | 'groq';
+
+    if (useGroq) {
+      // Use Groq for structured tasks
       try {
-        simulationParams = JSON.parse(simulateMatch[1].trim());
-      } catch {
-        console.warn('Failed to parse simulation parameters');
+        const groqResult = await handleWithGroq(messages, simulationResult);
+        response = groqResult.response;
+        simulationParams = groqResult.simulationParams;
+        model = groqResult.model;
+      } catch (groqError) {
+        console.error('Groq API error:', groqError);
+        
+        // Fallback to Gemini
+        try {
+          const geminiResult = await handleWithGemini(messages, simulationResult);
+          response = geminiResult.response + '\n\n*(Note: Fell back to Gemini due to Groq error)*';
+          model = 'gemini';
+        } catch (geminiError) {
+          console.error('Gemini fallback error:', geminiError);
+          return NextResponse.json({
+            response: "ArbiSafe's brain is having a moment. Try again in a few seconds — the AI might be warming up. 🛡️",
+            simulationParams: null,
+            model: 'gemini',
+          });
+        }
       }
-      // Remove the <simulate> block from the visible response
-      assistantResponse = assistantResponse.replace(/<simulate>[\s\S]*?<\/simulate>/, '').trim();
+    } else {
+      // Use Gemini for general conversation
+      try {
+        const geminiResult = await handleWithGemini(messages, simulationResult);
+        response = geminiResult.response;
+        model = geminiResult.model;
+      } catch (geminiError) {
+        console.error('Gemini API error:', geminiError);
+        
+        // Fallback to Groq
+        try {
+          const groqResult = await handleWithGroq(messages, simulationResult);
+          response = groqResult.response + '\n\n*(Note: Fell back to Groq due to Gemini error)*';
+          simulationParams = groqResult.simulationParams;
+          model = 'groq';
+        } catch (groqError) {
+          console.error('Groq fallback error:', groqError);
+          return NextResponse.json({
+            response: "ArbiSafe's brain is having a moment. Try again in a few seconds — the AI might be warming up. 🛡️",
+            simulationParams: null,
+            model: 'groq',
+          });
+        }
+      }
     }
 
     return NextResponse.json({
-      response: assistantResponse,
+      response,
       simulationParams,
+      model,
     });
 
   } catch (error) {
@@ -106,6 +267,7 @@ ${JSON.stringify(simulationResult, null, 2)}`,
     return NextResponse.json({
       response: "Something went wrong on my end. Give me a sec and try again — I'm still learning. 🛡️",
       simulationParams: null,
+      model: 'gemini',
     });
   }
 }
