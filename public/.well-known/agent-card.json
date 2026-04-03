@@ -1,0 +1,59 @@
+{
+  "name": "ArbiSafe",
+  "description": "DeFi strategy simulator and risk analysis agent for Arbitrum. Simulates swap outcomes, stress tests positions, scores protocol safety, and provides AI-powered strategy advice before execution.",
+  "url": "https://arbisafe.vercel.app",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "simulate_strategy",
+      "name": "Simulate DeFi Strategy",
+      "description": "Simulates any swap or LP strategy on Arbitrum with real onchain data. Returns expected output, slippage, gas cost, stress test scenarios, and profit projections.",
+      "inputModes": ["text"],
+      "outputModes": ["text", "data"],
+      "examples": ["Simulate swapping $500 USDC for ARB on Camelot", "What happens if I LP $1000 USDC/WETH?"]
+    },
+    {
+      "id": "check_token_price",
+      "name": "Get Token Price",
+      "description": "Fetches real-time token price, volume, and liquidity from Arbitrum DEXes via DexScreener.",
+      "inputModes": ["text"],
+      "outputModes": ["text", "data"],
+      "examples": ["/price ARB", "What is the price of GMX?"]
+    },
+    {
+      "id": "protocol_safety",
+      "name": "Protocol Safety Check",
+      "description": "Scores any protocol or contract address on Arbitrum for safety using audit status, TVL, contract verification, and age.",
+      "inputModes": ["text"],
+      "outputModes": ["text", "data"],
+      "examples": ["/safe camelot", "/safe 0x..."]
+    },
+    {
+      "id": "market_overview",
+      "name": "Arbitrum Market Overview",
+      "description": "Returns top gainers, losers, and overall market sentiment on Arbitrum.",
+      "inputModes": ["text"],
+      "outputModes": ["text", "data"],
+      "examples": ["/market", "/gainers", "/losers"]
+    },
+    {
+      "id": "gas_check",
+      "name": "Gas Fee Check",
+      "description": "Returns current Arbitrum gas price and estimated transaction costs.",
+      "inputModes": ["text"],
+      "outputModes": ["text", "data"],
+      "examples": ["/gas"]
+    }
+  ],
+  "erc8004": {
+    "agentId": 162,
+    "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "network": "Arbitrum Sepolia",
+    "registrationTx": "0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a",
+    "metadataUrl": "https://arbisafe.vercel.app/agent.json"
+  }
+}
