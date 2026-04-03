@@ -10,6 +10,22 @@ Built for the **ArbiLink Agentic Bounty** — Arbitrum Open House London 2026.
 **ERC-8004 Agent ID:** #162 · Arbitrum Sepolia  
 **Registration TX:** `0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a` 
 
+## Why ArbiSafe
+
+Most DeFi agents execute first and ask questions never. ArbiSafe takes the opposite approach — **simulate before you ape**.
+
+| | ArbiSafe | Typical DeFi Agent |
+|---|---|---|
+| Interface | Conversational AI chat | CLI / curl commands |
+| AI Layer | Gemini 2.0 Flash + Groq Llama 4 | None |
+| Approach | Simulate → understand → decide | Execute directly |
+| User | Anyone | Developers only |
+| Safety | Pre-execution risk scoring | Post-execution |
+| Token support | Any ticker or contract address | Fixed token list |
+| A2A compatible | Yes — /api/agent-card | Varies |
+
+ArbiSafe is the only Arbitrum agent that combines live onchain simulation, conversational AI intelligence, and pre-execution safety scoring in a single accessible interface.
+
 ---
 
 ## What It Does
