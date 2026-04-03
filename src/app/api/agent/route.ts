@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { resolveToken } from '@/lib/tokenResolver';
-import { fetchDexScreenerPrice, fetchTopMovers, fetchMarketOverview } from '@/lib/priceFetcher';
+import { fetchDexScreenerPrice, fetchMarketOverview } from '@/lib/priceFetcher';
 import { getGasData, simulateSwap, simulateLP } from '@/lib/alchemy';
 import { getTrustScore } from '@/lib/api/trust';
 import { simulateStrategy } from '@/lib/simulate';
@@ -170,22 +170,6 @@ const TOOLS: any[] = [
       description: 'Get Arbitrum market overview with top tokens',
       parameters: { type: 'object', properties: {} }
     }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'getTopGainers',
-      description: 'Get top 5 gaining tokens on Arbitrum',
-      parameters: { type: 'object', properties: {} }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'getTopLosers',
-      description: 'Get top 5 losing tokens on Arbitrum',
-      parameters: { type: 'object', properties: {} }
-    }
   }
 ];
 
@@ -296,12 +280,6 @@ async function executeTool(name: string, args: any) {
         return await getTrustScore(args.protocol);
       case 'getMarketOverview':
         return await fetchMarketOverview();
-      case 'getTopGainers':
-        const gainers = await fetchTopMovers('gainers');
-        return { data: gainers, error: null };
-      case 'getTopLosers':
-        const losers = await fetchTopMovers('losers');
-        return { data: losers, error: null };
       default:
         return { data: null, error: `Unknown tool: ${name}` };
     }

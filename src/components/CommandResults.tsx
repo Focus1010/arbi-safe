@@ -52,10 +52,6 @@ export default function CommandResults({ type, data }: CommandResultsProps) {
       return <GasCard data={data} style={cardStyle} />;
     case 'market':
       return <MarketCard data={data} style={cardStyle} />;
-    case 'gainers':
-      return <GainersLosersCard data={data} type="gainers" style={cardStyle} />;
-    case 'losers':
-      return <GainersLosersCard data={data} type="losers" style={cardStyle} />;
     case 'safe':
       return <SafeCard data={data} style={cardStyle} />;
     case 'pool':
@@ -143,37 +139,87 @@ function PriceCard({ data, style }: { data: any; style: any }) {
 function CompareCard({ data, style }: { data: any; style: any }) {
   const { tokenA, tokenB, betterLiquidity } = data;
 
-  const TokenColumn = ({ token, isWinner }: { token: any; isWinner: boolean }) => (
-    <div style={{ flex: 1, textAlign: 'center' }}>
-      <div style={{ 
-        fontSize: '14px', 
-        fontWeight: 700, 
-        color: isWinner ? colors.accent : colors.text,
-        marginBottom: '4px'
-      }}>
-        {token.symbol}
+  const TokenColumn = ({ token, isWinner, side }: { token: any; isWinner: boolean; side: 'left' | 'right' }) => {
+    const isPositive = (token.change24h || 0) >= 0;
+    
+    return (
+      <div style={{ flex: 1, textAlign: side === 'left' ? 'left' : 'right' }}>
+        <div style={{ 
+          fontSize: '16px', 
+          fontWeight: 700, 
+          color: isWinner ? '#3b82f6' : colors.text,
+          marginBottom: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          justifyContent: side === 'left' ? 'flex-start' : 'flex-end'
+        }}>
+          {token.symbol}
+          {isWinner && <span style={{ fontSize: '12px' }}>👑</span>}
+        </div>
+        <div style={{ fontSize: '14px', color: colors.text, fontWeight: 700, marginBottom: '4px' }}>
+          ${token.priceUSD.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+        </div>
+        <div style={{ 
+          fontSize: '11px', 
+          color: isPositive ? colors.green : colors.red,
+          fontWeight: 600,
+          marginBottom: '6px'
+        }}>
+          {isPositive ? '+' : ''}{(token.change24h || 0).toFixed(2)}% (24h)
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ fontSize: '10px', color: colors.textDim, fontWeight: 500 }}>
+            Vol: ${((token.volume24h || 0) / 1e6).toFixed(2)}M
+          </div>
+          <div style={{ fontSize: '10px', color: isWinner ? '#3b82f6' : colors.textDim, fontWeight: isWinner ? 600 : 500 }}>
+            Liq: ${((token.liquidity || 0) / 1e6).toFixed(2)}M {isWinner && '✓'}
+          </div>
+        </div>
       </div>
-      <div style={{ fontSize: '13px', color: colors.textMuted, fontWeight: 600, marginBottom: '6px' }}>
-        ${token.priceUSD.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-      </div>
-      <div style={{ fontSize: '10px', color: colors.textDim, fontWeight: 500 }}>
-        V: ${(token.volume24h / 1e6).toFixed(1)}M
-      </div>
-      <div style={{ fontSize: '10px', color: colors.textDim, fontWeight: 500 }}>
-        L: ${(token.liquidity / 1e6).toFixed(1)}M
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
-    <div style={{ ...style, padding: '10px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-        <TokenColumn token={tokenA} isWinner={betterLiquidity === 'A'} />
-        <div style={{ fontSize: '11px', fontWeight: 700, color: colors.textDim, padding: '0 10px' }}>VS</div>
-        <TokenColumn token={tokenB} isWinner={betterLiquidity === 'B'} />
+    <div style={{ ...style, padding: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '10px' }}>
+        <TokenColumn token={tokenA} isWinner={betterLiquidity === 'A'} side="left" />
+        
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          padding: '0 12px',
+          marginTop: '8px'
+        }}>
+          <div style={{ 
+            fontSize: '10px', 
+            fontWeight: 700, 
+            color: colors.textDim, 
+            backgroundColor: colors.bg,
+            padding: '4px 8px',
+            borderRadius: '3px',
+            border: `1px solid ${colors.border}`
+          }}>
+            VS
+          </div>
+        </div>
+        
+        <TokenColumn token={tokenB} isWinner={betterLiquidity === 'B'} side="right" />
       </div>
-      <div style={{ fontSize: '11px', color: colors.textDim, textAlign: 'center', fontWeight: 500 }}>
-        {betterLiquidity === 'equal' ? 'Similar liquidity' : `${betterLiquidity === 'A' ? tokenA.symbol : tokenB.symbol} wins on liquidity`}
+      
+      <div style={{ 
+        fontSize: '11px', 
+        color: colors.textMuted, 
+        textAlign: 'center', 
+        fontWeight: 600,
+        paddingTop: '8px',
+        borderTop: `1px solid ${colors.border}`
+      }}>
+        {betterLiquidity === 'equal' 
+          ? '⚖️ Similar liquidity depth' 
+          : `🏆 ${betterLiquidity === 'A' ? tokenA.symbol : tokenB.symbol} has deeper liquidity`}
       </div>
     </div>
   );
@@ -253,42 +299,6 @@ function MarketCard({ data, style }: { data: any; style: any }) {
               {token.priceChange24h >= 0 ? '+' : ''}{token.priceChange24h.toFixed(2)}%
             </span>
             <span style={{ color: colors.textDim, fontWeight: 500 }}>${(token.volume24h / 1e6).toFixed(1)}M</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// GAINERS/LOSERS CARD
-function GainersLosersCard({ data, type, style }: { data: any[]; type: 'gainers' | 'losers'; style: any }) {
-  const isGainers = type === 'gainers';
-
-  return (
-    <div style={{ ...style, padding: '10px' }}>
-      <div style={{ fontSize: '12px', fontWeight: 700, color: colors.text, marginBottom: '8px', textTransform: 'uppercase' }}>
-        {isGainers ? 'Top Gainers' : 'Top Losers'}
-      </div>
-      <div>
-        {data.slice(0, 5).map((token: any, i: number) => (
-          <div
-            key={i}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '4px 0',
-              borderBottom: i < 4 ? `1px solid ${colors.border}` : 'none',
-              fontSize: '12px',
-            }}
-          >
-            <span style={{ fontSize: '10px', color: colors.textDim, fontWeight: 700, width: '16px' }}>{i + 1}</span>
-            <span style={{ color: colors.text, fontWeight: 600, width: '55px' }}>{token.symbol}</span>
-            <span style={{ color: colors.textMuted, flex: 1, fontWeight: 500 }}>${token.price.toFixed(4)}</span>
-            <span style={{ color: isGainers ? colors.green : colors.red, fontWeight: 700, width: '55px', textAlign: 'right' }}>
-              {isGainers ? '+' : ''}{token.priceChange24h.toFixed(2)}%
-            </span>
-            <span style={{ color: colors.textDim, fontWeight: 500, width: '50px', textAlign: 'right' }}>${(token.volume24h / 1e6).toFixed(1)}M</span>
           </div>
         ))}
       </div>

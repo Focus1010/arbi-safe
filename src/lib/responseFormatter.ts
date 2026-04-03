@@ -116,25 +116,6 @@ Top Movers:`;
 }
 
 /**
- * Format top gainers/losers
- */
-export function formatTopMovers(
-  movers: Array<{ symbol: string; change24h: number; price: number }>,
-  type: 'gainers' | 'losers'
-): string {
-  const title = type === 'gainers' ? '🚀 TOP GAINERS' : '🔻 TOP LOSERS';
-  
-  let output = `${title} (24h)
-━━━━━━━━━━━━━━━━━━━━━`;
-
-  movers.slice(0, 5).forEach((token, i) => {
-    output += `\n${i + 1}. ${token.symbol}: +${token.change24h.toFixed(2)}% ($${token.price.toLocaleString(undefined, { maximumFractionDigits: 4 })})`;
-  });
-
-  return output;
-}
-
-/**
  * Format gas fees
  */
 export function formatGasFees(gasData: {

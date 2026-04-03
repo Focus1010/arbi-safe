@@ -12,8 +12,6 @@ export type IntentType =
   | 'safe' 
   | 'pool' 
   | 'market' 
-  | 'gainers' 
-  | 'losers' 
   | 'help' 
   | 'clear' 
   | 'unknown';
@@ -100,22 +98,6 @@ const INTENT_PATTERNS: Array<{ intent: IntentType; patterns: RegExp[] }> = [
       /(?:market|overview|trending|top|market cap)/i,
       /(?:what|how).*(?:market|doing)/i,
       /^\/(?:market|m)\s*$/i,
-    ],
-  },
-  {
-    intent: 'gainers',
-    patterns: [
-      /(?:gainers|up|pumping|winners|top gainers)/i,
-      /(?:what|which).*(?:up|gaining|pumping)/i,
-      /^\/(?:gainers|up)\s*$/i,
-    ],
-  },
-  {
-    intent: 'losers',
-    patterns: [
-      /(?:losers|down|dumping|losing|top losers)/i,
-      /(?:what|which).*(?:down|losing|dumping)/i,
-      /^\/(?:losers|down)\s*$/i,
     ],
   },
   {
@@ -227,8 +209,6 @@ export function parseInput(input: string): ParsedInput {
       'gas': 'gas', 'g': 'gas',
       'safe': 'safe', 'trust': 'safe',
       'market': 'market', 'm': 'market',
-      'gainers': 'gainers', 'up': 'gainers',
-      'losers': 'losers', 'down': 'losers',
       'help': 'help', 'h': 'help',
       'clear': 'clear', 'clr': 'clear',
     };

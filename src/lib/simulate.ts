@@ -3,6 +3,7 @@ import { getPoolData, getSwapQuote } from './api/pool';
 import { getGasEstimate } from './api/gas';
 import { getTrustScore } from './api/trust';
 import { lookupToken, TokenData } from './api/price';
+import { getTokenMetadata } from './tokens';
 
 /**
  * Resolve token input and fetch metadata from DexScreener ONLY

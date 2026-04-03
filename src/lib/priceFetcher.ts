@@ -141,7 +141,7 @@ export async function fetchDexScreenerPrice(contractAddress: string): Promise<Pr
     // 1. Validate input
     const validation = validateAddress(contractAddress);
     if (!validation.valid) {
-      return { data: null, error: validation.error };
+      return { data: null, error: validation.error ?? null };
     }
     
     const targetAddress = validation.normalized!;
@@ -230,69 +230,6 @@ export async function fetchDexScreenerPrice(contractAddress: string): Promise<Pr
     }
     console.error('Unexpected error in fetchDexScreenerPrice:', error);
     return { data: null, error: 'No reliable market data available.' };
-  }
-}
-
-/**
- * Get top gainers/losers with strict filtering
- */
-export async function fetchTopMovers(type: 'gainers' | 'losers'): Promise<any[]> {
-  try {
-    const response = await axios.get(
-      'https://api.dexscreener.com/latest/dex/search?q=arbitrum',
-      { timeout: 10000 }
-    );
-    
-    const pairs = response.data?.pairs || [];
-    
-    // Strict filtering
-    const validPairs = pairs.filter((p: any) => {
-      if (p.chainId !== 'arbitrum') return false;
-      if (!p.priceChange?.h24) return false;
-      
-      const liquidity = parseFloat(p.liquidity?.usd || 0);
-      if (liquidity < 200000) return false; // $200k min
-      
-      const volume = parseFloat(p.volume?.h24 || 0);
-      if (volume < 100000) return false; // $100k min
-      
-      return true;
-    });
-    
-    // Sort by price change
-    const sorted = [...validPairs].sort((a: any, b: any) => {
-      const changeA = parseFloat(a.priceChange.h24);
-      const changeB = parseFloat(b.priceChange.h24);
-      return type === 'gainers' ? changeB - changeA : changeA - changeB;
-    });
-    
-    // Deduplicate by ADDRESS (not symbol)
-    const seen = new Set<string>();
-    const topMovers = [];
-    
-    for (const pair of sorted) {
-      const address = pair.baseToken?.address?.toLowerCase();
-      if (!address || seen.has(address)) continue;
-      
-      seen.add(address);
-      topMovers.push({
-        address,
-        symbol: pair.baseToken?.symbol,
-        name: pair.baseToken?.name,
-        price: parseFloat(pair.priceUsd),
-        change24h: parseFloat(pair.priceChange.h24),
-        volume: parseFloat(pair.volume?.h24 || 0),
-        liquidity: parseFloat(pair.liquidity?.usd || 0),
-      });
-      
-      if (topMovers.length >= 5) break;
-    }
-    
-    return topMovers;
-    
-  } catch (error) {
-    console.error('Error fetching top movers:', error);
-    return [];
   }
 }
 

@@ -10,8 +10,6 @@ export const COMMANDS_HELP = [
   { command: "/safe {protocol}", description: "Check if a protocol or contract is safe" },
   { command: "/pool {tokenA} {tokenB}", description: "Get liquidity pool info for a pair" },
   { command: "/market", description: "Arbitrum market overview and sentiment" },
-  { command: "/gainers", description: "Top gaining tokens on Arbitrum right now" },
-  { command: "/losers", description: "Biggest drops on Arbitrum right now" },
   { command: "/simulate {from} {to} {amount}", description: "Run a swap simulation directly" },
   { command: "/lp {from} {to} {amount}", description: "Simulate an LP position" },
   { command: "/clear", description: "Clear chat history" },
@@ -60,12 +58,6 @@ export function parseCommand(input: string): CommandResult {
 
     case '/market':
       return { command: 'market' };
-
-    case '/gainers':
-      return { command: 'gainers' };
-
-    case '/losers':
-      return { command: 'losers' };
 
     case '/simulate':
       if (parts.length < 4) {

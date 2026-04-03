@@ -6,8 +6,6 @@ import {
   checkGasFees,
   getPoolInfo,
   getArbitrumMarketOverview,
-  getTopGainers,
-  getTopLosers,
 } from '@/lib/agentTools';
 import { COMMANDS_HELP } from '@/lib/commandParser';
 import { simulateStrategy } from '@/lib/simulate';
@@ -66,22 +64,6 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ type: 'error', message: result.error }, { status: 400 });
         }
         return NextResponse.json({ type: 'market', data: result.data });
-      }
-
-      case 'gainers': {
-        const result = await getTopGainers();
-        if (result.error) {
-          return NextResponse.json({ type: 'error', message: result.error }, { status: 400 });
-        }
-        return NextResponse.json({ type: 'gainers', data: result.data });
-      }
-
-      case 'losers': {
-        const result = await getTopLosers();
-        if (result.error) {
-          return NextResponse.json({ type: 'error', message: result.error }, { status: 400 });
-        }
-        return NextResponse.json({ type: 'losers', data: result.data });
       }
 
       case 'simulate': {
