@@ -14,14 +14,33 @@ const gemini = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 function needsStructuredExtraction(message: string): boolean {
   const lowerMsg = message.toLowerCase();
   
-  // DeFi action keywords
+  // Question patterns that should go to Gemini (asking vs requesting)
+  const questionPrefixes = [
+    'can i ', 'could i ', 'should i ', 'what are ', 'what is ', 'how do ', 
+    'how does ', 'how can ', 'explain ', 'tell me about ', 'what about '
+  ];
+  const isAskingQuestion = questionPrefixes.some(prefix => lowerMsg.startsWith(prefix));
+  
+  // If asking a question (not requesting action), send to Gemini
+  if (isAskingQuestion) {
+    // Exception: /price command should still go to Groq for data
+    if (message.startsWith('/price')) return true;
+    // Exception: contract address lookup
+    if (/0x[a-fA-F0-9]{40}/.test(message)) return true;
+    return false;
+  }
+  
+  // Direct action keywords (when not asking a question)
   const actionKeywords = [
-    'swap', 'trade', 'buy', 'sell', 'lp', 'liquidity', 'pool', 
+    'swap', 'trade', 'buy', 'sell', 'lp', 'pool', 
     'farm', 'yield', 'bridge', 'simulate'
   ];
   
-  // Check for action keywords
-  if (actionKeywords.some(keyword => lowerMsg.includes(keyword))) {
+  // Check for action keywords (but not in educational context)
+  const educationalContext = ['risks of', 'explain', 'what is', 'how does'];
+  const hasEducationalContext = educationalContext.some(ctx => lowerMsg.includes(ctx));
+  
+  if (!hasEducationalContext && actionKeywords.some(keyword => lowerMsg.includes(keyword))) {
     return true;
   }
   
@@ -31,13 +50,14 @@ function needsStructuredExtraction(message: string): boolean {
   }
   
   // Check for token ticker + dollar amount patterns
+  // Only if it's a direct request (not asking about it)
   const tickerAmountPattern = /(?:^|\s)(?:[A-Z]{2,5}\s*\$?\d+|\$?\d+\s*[A-Z]{2,5})(?:\s|$)/i;
-  if (tickerAmountPattern.test(message)) {
+  if (tickerAmountPattern.test(message) && !isAskingQuestion) {
     return true;
   }
   
   // Check for slash commands
-  if (message.startsWith('/simulate') || message.startsWith('/lp')) {
+  if (message.startsWith('/simulate') || message.startsWith('/lp') || message.startsWith('/price')) {
     return true;
   }
   
