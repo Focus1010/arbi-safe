@@ -180,10 +180,16 @@ export default function Home() {
     }
 
     try {
+      // Clean messages before sending - strip extra fields that might confuse the agent
+      const cleanMessages = newMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
+      
       const response = await fetch('/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages }),
+        body: JSON.stringify({ messages: cleanMessages }),
       });
 
       if (!response.ok) {
@@ -232,11 +238,17 @@ export default function Home() {
         if (simResponse.ok) {
           const simResult: SimulationResult = await simResponse.json();
           
+          // Clean messages for interpretation call too
+          const cleanFinalMessages = finalMessages.map(m => ({
+            role: m.role,
+            content: m.content,
+          }));
+          
           const interpResponse = await fetch('/api/agent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              messages: finalMessages,
+              messages: cleanFinalMessages,
               simulationResult: simResult 
             }),
           });

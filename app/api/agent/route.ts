@@ -319,6 +319,13 @@ export async function POST(request: NextRequest) {
   try {
     const { messages, simulationResult } = await request.json();
 
+    // Strip old simulationResult from message history to prevent confusion
+    // Each simulation request should be fresh, only keep simulationResult for interpretation calls
+    const cleanMessages = messages.map((m: any) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
     if (!Array.isArray(messages)) {
       return NextResponse.json(
         { error: 'Invalid request: messages must be an array' },
@@ -327,7 +334,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Get the last user message for routing
-    const lastUserMessage = messages
+    const lastUserMessage = cleanMessages
       .filter((m: any) => m.role === 'user')
       .pop()?.content || '';
 
@@ -368,7 +375,7 @@ export async function POST(request: NextRequest) {
     if (useGroq) {
       // Use Groq for structured tasks
       try {
-        const groqResult = await handleWithGroq(messages, simulationResult);
+        const groqResult = await handleWithGroq(cleanMessages, simulationResult);
         response = groqResult.response;
         simulationParams = groqResult.simulationParams;
         model = groqResult.model;
@@ -381,7 +388,7 @@ export async function POST(request: NextRequest) {
             
             // Send simulation results back to Groq for interpretation
             const finalResult = await handleWithGroq(
-              [...messages, { role: 'assistant', content: response }],
+              [...cleanMessages, { role: 'assistant', content: response }],
               simResult
             );
             response = finalResult.response;
@@ -405,7 +412,7 @@ export async function POST(request: NextRequest) {
         
         // Fallback to Gemini
         try {
-          const geminiResult = await handleWithGemini(messages, simulationResult);
+          const geminiResult = await handleWithGemini(cleanMessages, simulationResult);
           response = geminiResult.response + '\n\n*(Note: Fell back to Gemini due to Groq error)*';
           model = 'gemini';
         } catch (geminiError) {
@@ -421,7 +428,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Use Gemini for general conversation
       try {
-        const geminiResult = await handleWithGemini(messages, simulationResult);
+        const geminiResult = await handleWithGemini(cleanMessages, simulationResult);
         response = geminiResult.response;
         model = geminiResult.model;
       } catch (geminiError) {
@@ -440,7 +447,7 @@ export async function POST(request: NextRequest) {
         // Try Groq fallback automatically
         try {
           console.log('Attempting Groq fallback after Gemini failure...');
-          const groqResult = await handleWithGroq(messages, simulationResult);
+          const groqResult = await handleWithGroq(cleanMessages, simulationResult);
           response = groqResult.response + '\n\n*(Note: Fell back to Groq due to Gemini error)*';
           simulationParams = groqResult.simulationParams;
           model = 'groq';
