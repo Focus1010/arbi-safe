@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { lookupToken, TokenData } from '@/lib/api/price';
 
 // Initialize both AI clients
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -198,6 +199,53 @@ async function handleWithGroq(
 }
 
 // ============================================================================
+// PRICE LOOKUP — Real-time DexScreener data (prevents hallucination)
+// ============================================================================
+
+function isPriceQuestion(message: string): string | null {
+  const lowerMsg = message.toLowerCase();
+  
+  // Price question patterns
+  const pricePatterns = [
+    /what is the price of (\w+)/i,
+    /what['']?s the price of (\w+)/i,
+    /price of (\w+)/i,
+    /how much is (\w+) worth/i,
+    /(\w+) price/i,
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      return match[1].toUpperCase();
+    }
+  }
+  
+  return null;
+}
+
+async function fetchRealPrice(tokenSymbol: string): Promise<{ data: TokenData | null; error: string | null }> {
+  try {
+    const tokenData = await lookupToken(tokenSymbol);
+    
+    if (!tokenData) {
+      return { 
+        data: null, 
+        error: `Could not find ${tokenSymbol} on Arbitrum via DexScreener.` 
+      };
+    }
+    
+    return { data: tokenData, error: null };
+  } catch (error) {
+    console.error('Price lookup error:', error);
+    return { 
+      data: null, 
+      error: 'Failed to fetch price data from DexScreener.' 
+    };
+  }
+}
+
+// ============================================================================
 // MAIN HANDLER
 // ============================================================================
 
@@ -217,7 +265,34 @@ export async function POST(request: NextRequest) {
       .filter((m: any) => m.role === 'user')
       .pop()?.content || '';
 
-    // Route to appropriate handler
+    // CHECK FOR PRICE QUESTIONS FIRST — Always fetch real data
+    const priceToken = isPriceQuestion(lastUserMessage);
+    if (priceToken && !simulationResult) {
+      console.log(`🔍 Price question detected for: ${priceToken}`);
+      const priceResult = await fetchRealPrice(priceToken);
+      
+      if (priceResult.data) {
+        const token = priceResult.data;
+        const change = parseFloat(token.priceChange24h);
+        const changeEmoji = change >= 0 ? '🟢' : '🔴';
+        const changeSign = change >= 0 ? '+' : '';
+        
+        return NextResponse.json({
+          response: `${token.symbol}: $${token.priceUsd.toFixed(4)} ${changeEmoji} ${changeSign}${change.toFixed(2)}% (24h)\nLiq: $${(parseFloat(token.liquidity) / 1e6).toFixed(2)}M | Vol: $${(parseFloat(token.volume24h) / 1e6).toFixed(2)}M`,
+          priceResult: token,
+          simulationParams: null,
+          model: 'dexscreener',
+        });
+      } else {
+        return NextResponse.json({
+          response: priceResult.error || `No price data found for ${priceToken} on Arbitrum.`,
+          simulationParams: null,
+          model: 'dexscreener',
+        });
+      }
+    }
+
+    // Route to appropriate handler for non-price questions
     const useGroq = needsStructuredExtraction(lastUserMessage) || simulationResult;
     
     let response: string;
