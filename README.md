@@ -17,12 +17,12 @@ Most DeFi agents execute first and ask questions never. ArbiSafe takes the oppos
 | | ArbiSafe | Typical DeFi Agent |
 |---|---|---|
 | Interface | Conversational AI chat | CLI / curl commands |
-| AI Layer | Gemini 2.0 Flash + Groq Llama 4 | None |
+| AI Layer | Gemini 2.0 Flash + Groq Llama 4 Scout | None |
 | Approach | Simulate → understand → decide | Execute directly |
 | User | Anyone | Developers only |
 | Safety | Pre-execution risk scoring | Post-execution |
 | Token support | Any ticker or contract address | Fixed token list |
-| A2A compatible | Yes — /api/agent-card | Varies |
+| A2A compatible | Yes — `/api/agent-card`, `/api/tools` | Varies |
 
 ArbiSafe is the only Arbitrum agent that combines live onchain simulation, conversational AI intelligence, and pre-execution safety scoring in a single accessible interface.
 
@@ -74,7 +74,14 @@ For power users who want speed:
 ArbiSafe recognizes 30+ Arbitrum tokens by ticker symbol and accepts any token by contract address (0x...). Unknown tokens are looked up live on DexScreener.
 
 ### ERC-8004 Registration
-ArbiSafe is registered on the ERC-8004 Identity Registry on Arbitrum Sepolia as Agent #162. The agent metadata is publicly resolvable at `https://arbisafe.vercel.app/agent.json`.
+ArbiSafe is registered on the ERC-8004 Identity Registry on Arbitrum Sepolia as Agent #162.
+
+**Agent Metadata:**
+- `https://arbisafe.vercel.app/agent.json` — ERC-8004 registration metadata
+- `https://arbisafe.vercel.app/.well-known/agent-card.json` — A2A Agent Card (static)
+- `https://arbisafe.vercel.app/api/agent-card` — A2A Agent Card (dynamic)
+- `https://arbisafe.vercel.app/api/tools` — Structured tools list
+- `https://arbisafe.vercel.app/api/agent` — Agent health check (GET)
 
 ---
 
@@ -163,11 +170,13 @@ ARBISCAN_API_KEY=your_arbiscan_api_key
 ARBITRUM_RPC=https://arb1.arbitrum.io/rpc
 ARBITRUM_SEPOLIA_RPC=https://sepolia-rollup.arbitrum.io/rpc
 GROQ_API_KEY=your_groq_api_key
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 Get free API keys:
 - **Arbiscan:** https://arbiscan.io/apis
 - **Groq:** https://console.groq.com
+- **Gemini:** https://ai.google.dev
 ```bash
 npm run dev
 ```
@@ -184,7 +193,10 @@ Network:          Arbitrum Sepolia
 Contract:         0x8004A818BFB912233c491871b3d84c89A494BD9e  
 Agent ID:         #162  
 Owner wallet:     0x9431a4E212cfcadC2F37381b47765b2d6Bcd74cc  
-Agent metadata:   https://arbisafe.vercel.app/agent.json  
+Agent metadata:   https://arbisafe.vercel.app/agent.json
+A2A Agent Card:   https://arbisafe.vercel.app/api/agent-card
+Tools endpoint:   https://arbisafe.vercel.app/api/tools
+Health check:     https://arbisafe.vercel.app/api/agent (GET)
 Registration TX:  0x0422d6b48190e6b2d1a562662784ff48f37d9acd1fd81145a686c5e08600c99a
 
 The agent metadata file (`/agent.json`) is publicly resolvable and describes ArbiSafe's capabilities, service endpoints, and identity per the ERC-8004 spec.
@@ -200,9 +212,11 @@ arbisafe/
 │   │   ├── page.tsx              # Main chat interface
 │   │   ├── layout.tsx            # App layout + metadata
 │   │   └── api/
-│   │       ├── agent/route.ts    # Groq AI agent endpoint
-│   │       ├── simulate/route.ts # Simulation engine endpoint
-│   │       └── command/route.ts  # Slash command handler
+│   │       ├── agent/route.ts      # AI agent endpoint (POST chat, GET health)
+│   │       ├── agent-card/route.ts # A2A Agent Card endpoint
+│   │       ├── tools/route.ts      # Structured tools list
+│   │       ├── simulate/route.ts   # Simulation engine endpoint
+│   │       └── command/route.ts    # Slash command handler
 │   ├── components/
 │   │   ├── CommandResults.tsx    # Rich command response cards
 │   │   └── StrategyCard.tsx      # Shareable strategy card
