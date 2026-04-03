@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { lookupToken, TokenData } from '@/lib/api/price';
+import { simulateStrategy } from '@/lib/simulate';
 
 // Initialize both AI clients
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -9,8 +10,37 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const gemini = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 // ============================================================================
-// ROUTING LOGIC — Determine which model handles the request
+// ERROR HANDLING HELPERS
 // ============================================================================
+
+function getErrorResponse(err: any): { response: string; status?: number } {
+  const errorMessage = err?.message || err?.toString() || '';
+  
+  // Check for specific error patterns
+  if (errorMessage.includes('429') || errorMessage.toLowerCase().includes('rate limit')) {
+    return { 
+      response: "I'm getting too many requests right now. Try again in 30 seconds." 
+    };
+  }
+  
+  if (errorMessage.toLowerCase().includes('quota')) {
+    return { 
+      response: "Daily request limit reached. Try again tomorrow or contact support." 
+    };
+  }
+  
+  // Check for API key issues
+  if (!process.env.GEMINI_API_KEY && errorMessage.toLowerCase().includes('gemini')) {
+    return { response: "Gemini API key not configured. Contact support." };
+  }
+  
+  if (!process.env.GROQ_API_KEY && errorMessage.toLowerCase().includes('groq')) {
+    return { response: "Groq API key not configured. Contact support." };
+  }
+  
+  // Generic error
+  return { response: "ArbiSafe's brain is having a moment. Try again in a few seconds." };
+}
 
 function needsStructuredExtraction(message: string): boolean {
   const lowerMsg = message.toLowerCase();
@@ -256,10 +286,36 @@ async function fetchRealPrice(tokenSymbol: string): Promise<{ data: TokenData | 
 }
 
 // ============================================================================
-// MAIN HANDLER
+// GET HEALTH CHECK
+// ============================================================================
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'ok',
+    gemini: !!process.env.GEMINI_API_KEY,
+    groq: !!process.env.GROQ_API_KEY,
+    arbiscan: !!process.env.ARBISCAN_API_KEY,
+  }, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    }
+  });
+}
+
+// ============================================================================
+// MAIN POST HANDLER
 // ============================================================================
 
 export async function POST(request: NextRequest) {
+  // Check for missing env vars at start
+  if (!process.env.GEMINI_API_KEY) {
+    console.error('GEMINI_API_KEY is not set');
+  }
+  if (!process.env.GROQ_API_KEY) {
+    console.error('GROQ_API_KEY is not set');
+  }
+  
   try {
     const { messages, simulationResult } = await request.json();
 
@@ -316,8 +372,36 @@ export async function POST(request: NextRequest) {
         response = groqResult.response;
         simulationParams = groqResult.simulationParams;
         model = groqResult.model;
+        
+        // If simulation params extracted, execute the simulation
+        if (simulationParams) {
+          console.log('🎯 Executing simulation with params:', simulationParams);
+          try {
+            const simResult = await simulateStrategy(simulationParams);
+            
+            // Send simulation results back to Groq for interpretation
+            const finalResult = await handleWithGroq(
+              [...messages, { role: 'assistant', content: response }],
+              simResult
+            );
+            response = finalResult.response;
+          } catch (simError) {
+            console.error('Simulation execution error:', simError);
+            response += '\n\n⚠️ I extracted your strategy but couldn\'t run the simulation. Try again with different tokens or amounts.';
+          }
+        }
       } catch (groqError) {
         console.error('Groq API error:', groqError);
+        
+        // Check for specific error types
+        const errorResponse = getErrorResponse(groqError);
+        if (errorResponse.response.includes('Groq API key not configured')) {
+          return NextResponse.json({
+            response: errorResponse.response,
+            simulationParams: null,
+            model: 'groq',
+          });
+        }
         
         // Fallback to Gemini
         try {
@@ -326,8 +410,9 @@ export async function POST(request: NextRequest) {
           model = 'gemini';
         } catch (geminiError) {
           console.error('Gemini fallback error:', geminiError);
+          const geminiErrorResponse = getErrorResponse(geminiError);
           return NextResponse.json({
-            response: "ArbiSafe's brain is having a moment. Try again in a few seconds — the AI might be warming up. 🛡️",
+            response: geminiErrorResponse.response,
             simulationParams: null,
             model: 'gemini',
           });
@@ -342,16 +427,29 @@ export async function POST(request: NextRequest) {
       } catch (geminiError) {
         console.error('Gemini API error:', geminiError);
         
-        // Fallback to Groq
+        // Check for specific Gemini errors
+        const errorResponse = getErrorResponse(geminiError);
+        if (errorResponse.response.includes('Gemini API key not configured')) {
+          return NextResponse.json({
+            response: errorResponse.response,
+            simulationParams: null,
+            model: 'gemini',
+          });
+        }
+        
+        // Try Groq fallback automatically
         try {
+          console.log('Attempting Groq fallback after Gemini failure...');
           const groqResult = await handleWithGroq(messages, simulationResult);
           response = groqResult.response + '\n\n*(Note: Fell back to Groq due to Gemini error)*';
           simulationParams = groqResult.simulationParams;
           model = 'groq';
         } catch (groqError) {
           console.error('Groq fallback error:', groqError);
+          
+          // Both failed
           return NextResponse.json({
-            response: "ArbiSafe's brain is having a moment. Try again in a few seconds — the AI might be warming up. 🛡️",
+            response: "Both AI services are temporarily unavailable. Try again in a moment.",
             simulationParams: null,
             model: 'groq',
           });
@@ -366,11 +464,37 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Agent API error:', error);
+    console.error('Agent error:', error);
     
-    // Return graceful fallback instead of 500 error
+    // Check for missing API keys
+    if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY) {
+      return NextResponse.json({
+        response: "AI services not configured. Contact support.",
+        simulationParams: null,
+        model: 'gemini',
+      });
+    }
+    
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json({
+        response: "Gemini API key not configured. Contact support.",
+        simulationParams: null,
+        model: 'gemini',
+      });
+    }
+    
+    if (!process.env.GROQ_API_KEY) {
+      return NextResponse.json({
+        response: "Groq API key not configured. Contact support.",
+        simulationParams: null,
+        model: 'groq',
+      });
+    }
+    
+    // Check for specific error patterns
+    const errorResponse = getErrorResponse(error);
     return NextResponse.json({
-      response: "Something went wrong on my end. Give me a sec and try again — I'm still learning. 🛡️",
+      response: errorResponse.response,
       simulationParams: null,
       model: 'gemini',
     });
