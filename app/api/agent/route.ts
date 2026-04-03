@@ -22,7 +22,23 @@ function needsStructuredExtraction(message: string): boolean {
   ];
   const isAskingQuestion = questionPrefixes.some(prefix => lowerMsg.startsWith(prefix));
   
-  // If asking a question (not requesting action), send to Gemini
+  // Action keywords that indicate a simulation/transaction request
+  const actionKeywords = [
+    'swap', 'trade', 'buy', 'sell', 'lp', 'pool', 
+    'farm', 'yield', 'bridge', 'simulate'
+  ];
+  const hasActionKeyword = actionKeywords.some(keyword => lowerMsg.includes(keyword));
+  
+  // Dollar amount patterns: $300, 300 USDC, $500, etc.
+  const amountPattern = /\$?\d+\s*(?:USD|USDC|USDT|ETH|ARB|DAI)?|\d+\s*(?:USD|USDC|USDT|ETH|ARB|DAI)/i;
+  const hasAmount = amountPattern.test(message);
+  
+  // If it has BOTH action keyword AND amount, it's a simulation request → Groq
+  if (hasActionKeyword && hasAmount) {
+    return true;
+  }
+  
+  // If asking a general question (no action/amount), send to Gemini
   if (isAskingQuestion) {
     // Exception: /price command should still go to Groq for data
     if (message.startsWith('/price')) return true;
@@ -31,29 +47,16 @@ function needsStructuredExtraction(message: string): boolean {
     return false;
   }
   
-  // Direct action keywords (when not asking a question)
-  const actionKeywords = [
-    'swap', 'trade', 'buy', 'sell', 'lp', 'pool', 
-    'farm', 'yield', 'bridge', 'simulate'
-  ];
-  
-  // Check for action keywords (but not in educational context)
+  // Check for action keywords without question prefix
   const educationalContext = ['risks of', 'explain', 'what is', 'how does'];
   const hasEducationalContext = educationalContext.some(ctx => lowerMsg.includes(ctx));
   
-  if (!hasEducationalContext && actionKeywords.some(keyword => lowerMsg.includes(keyword))) {
+  if (!hasEducationalContext && hasActionKeyword) {
     return true;
   }
   
   // Check for contract address (0x followed by 40 hex chars)
   if (/0x[a-fA-F0-9]{40}/.test(message)) {
-    return true;
-  }
-  
-  // Check for token ticker + dollar amount patterns
-  // Only if it's a direct request (not asking about it)
-  const tickerAmountPattern = /(?:^|\s)(?:[A-Z]{2,5}\s*\$?\d+|\$?\d+\s*[A-Z]{2,5})(?:\s|$)/i;
-  if (tickerAmountPattern.test(message) && !isAskingQuestion) {
     return true;
   }
   
@@ -80,11 +83,18 @@ const GROQ_SYSTEM_PROMPT = `You are ArbiSafe, an expert AI agent for simulating 
 You have real-time access to Arbitrum onchain data. When users describe a strategy, extract simulation parameters and trigger a simulation.
 
 PARAMETER EXTRACTION RULES:
-- fromToken: what they're swapping FROM. Default to USDC if unclear. Can be a ticker (USDC) or contract address (0x...)
-- toToken: what they're swapping TO. Can be a ticker or CA
-- amountUSD: the dollar amount. Ask if not specified.
+- fromToken: what they're swapping FROM (the payment token). Default to USDC if unclear. Can be a ticker (USDC) or contract address (0x...)
+- toToken: what they're swapping TO (the token they want to receive). Can be a ticker or CA
+- amountUSD: the dollar amount they're spending. Extract the number before the "of" or the currency they're using to pay
 - action: 'swap' for simple swaps, 'lp' if they mention liquidity, LP, yield, farming
 - protocol: camelot (default for most swaps on Arbitrum), gmx (for perps/leveraged), uniswap, aave (for lending)
+
+COMMON PATTERN EXAMPLES:
+- "buy $300 of ARB" → fromToken: "USDC", toToken: "ARB", amountUSD: 300
+- "swap 500 USDC to ZRO" → fromToken: "USDC", toToken: "ZRO", amountUSD: 500
+- "buy ARB with 300 USDC" → fromToken: "USDC", toToken: "ARB", amountUSD: 300
+- "swap ETH for GMX" → fromToken: "ETH", toToken: "GMX", amountUSD: (ask if not specified)
+- "lp $1000 USDC/WETH" → fromToken: "USDC", toToken: "WETH", amountUSD: 1000, action: "lp"
 
 When you have all parameters, output EXACTLY this at the end of your response (these tags are invisible to users - they trigger the simulation):
 <simulate>
