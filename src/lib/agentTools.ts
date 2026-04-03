@@ -233,18 +233,31 @@ export interface MarketOverviewResult {
 
 export async function getArbitrumMarketOverview(): Promise<{ data: MarketOverviewResult | null; error: string | null }> {
   try {
+    console.log('Fetching market data from DexScreener...');
     const response = await fetch('https://api.dexscreener.com/latest/dex/search?q=arbitrum', {
       headers: { Accept: 'application/json' },
     });
 
     if (!response.ok) {
-      return { data: null, error: 'Failed to fetch market data from DexScreener' };
+      console.error('DexScreener API error:', response.status, response.statusText);
+      return { data: null, error: `Failed to fetch market data: ${response.status} ${response.statusText}` };
     }
 
     const data = await response.json();
+    console.log('DexScreener response:', { pairCount: data.pairs?.length || 0 });
     
     if (!data.pairs || !Array.isArray(data.pairs)) {
-      return { data: null, error: 'Invalid market data format' };
+      console.error('Invalid data format:', data);
+      return { data: null, error: 'Invalid market data format from DexScreener' };
+    }
+
+    // Log sample pair to debug structure
+    if (data.pairs.length > 0) {
+      console.log('Sample pair:', { 
+        chainId: data.pairs[0].chainId, 
+        baseToken: data.pairs[0].baseToken?.symbol,
+        volume: data.pairs[0].volume?.h24
+      });
     }
 
     const arbitrumPairs = data.pairs
@@ -252,12 +265,20 @@ export async function getArbitrumMarketOverview(): Promise<{ data: MarketOvervie
       .sort((a: any, b: any) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0))
       .slice(0, 5);
 
+    console.log('Filtered Arbitrum pairs:', arbitrumPairs.length);
+
+    if (arbitrumPairs.length === 0) {
+      return { data: null, error: 'No Arbitrum market data available from DexScreener' };
+    }
+
     const topTokens: MarketToken[] = arbitrumPairs.map((pair: any) => ({
       symbol: pair.baseToken?.symbol || 'Unknown',
       price: parseFloat(pair.priceUsd) || 0,
       volume24h: pair.volume?.h24 || 0,
       priceChange24h: pair.priceChange?.h24 || 0,
     }));
+
+    console.log('Top tokens:', topTokens.map(t => `${t.symbol}: $${t.price}`));
 
     const avgChange = topTokens.reduce((sum, t) => sum + t.priceChange24h, 0) / topTokens.length;
     
@@ -271,6 +292,7 @@ export async function getArbitrumMarketOverview(): Promise<{ data: MarketOvervie
       error: null,
     };
   } catch (error) {
+    console.error('Market overview error:', error);
     return { data: null, error: `Error getting market overview: ${error instanceof Error ? error.message : 'Unknown error'}` };
   }
 }
