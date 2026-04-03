@@ -76,12 +76,19 @@ ArbiSafe recognizes 30+ Arbitrum tokens by ticker symbol and accepts any token b
 ### ERC-8004 Registration
 ArbiSafe is registered on the ERC-8004 Identity Registry on Arbitrum Sepolia as Agent #162.
 
+**Agent API (Programmatic access):**
+```bash
+curl -X POST https://arbisafe.vercel.app/api/agent \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "what is the price of ARB?"}]}'
+```
+
 **Agent Metadata:**
 - `https://arbisafe.vercel.app/agent.json` — ERC-8004 registration metadata
 - `https://arbisafe.vercel.app/.well-known/agent-card.json` — A2A Agent Card (static)
 - `https://arbisafe.vercel.app/api/agent-card` — A2A Agent Card (dynamic)
 - `https://arbisafe.vercel.app/api/tools` — Structured tools list
-- `https://arbisafe.vercel.app/api/agent` — Agent health check (GET)
+- `https://arbisafe.vercel.app/api/agent` — Agent health check (GET) / Chat API (POST)
 
 ---
 
@@ -219,7 +226,7 @@ arbisafe/
 │   │       └── command/route.ts    # Slash command handler
 │   ├── components/
 │   │   ├── CommandResults.tsx    # Rich command response cards
-│   │   └── StrategyCard.tsx      # Shareable strategy card
+│   │   └── SimulationCard.tsx    # Shareable simulation card
 │   └── lib/
 │       ├── simulate.ts           # Core simulation engine
 │       ├── tokens.ts             # Token registry + resolver
