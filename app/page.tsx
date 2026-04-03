@@ -85,7 +85,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "ArbiSafe Terminal v1.0 — Arbitrum Strategy Simulator\n\nType a command or ask about your strategy. Use /help for available commands.",
+      content: "Hey! I'm ArbiSafe — your onchain strategy simulator for Arbitrum, built by BasedFocus (x: @justfocus672).\n\nAsk me anything about DeFi, drop a strategy to simulate, or use / for commands.",
     },
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -126,7 +126,7 @@ export default function Home() {
     if (command.command === 'clear') {
       setMessages([{
         role: 'assistant',
-        content: "ArbiSafe Terminal v1.0 — Arbitrum Strategy Simulator\n\nType a command or ask about your strategy. Use /help for available commands.",
+        content: "Hey! I'm ArbiSafe — your onchain strategy simulator for Arbitrum, built by BasedFocus (x: @justfocus672).\n\nAsk me anything about DeFi, drop a strategy to simulate, or use / for commands.",
       }]);
       setIsThinking(false);
       setShowChips(true);
