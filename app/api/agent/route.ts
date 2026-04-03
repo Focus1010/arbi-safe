@@ -286,6 +286,20 @@ async function fetchRealPrice(tokenSymbol: string): Promise<{ data: TokenData | 
 }
 
 // ============================================================================
+// OPTIONS HANDLER (CORS preflight)
+// ============================================================================
+
+export async function OPTIONS() {
+  return NextResponse.json({}, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    }
+  });
+}
+
+// ============================================================================
 // GET HEALTH CHECK
 // ============================================================================
 
@@ -329,7 +343,13 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(messages)) {
       return NextResponse.json(
         { error: 'Invalid request: messages must be an array' },
-        { status: 400 }
+        { 
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          }
+        }
       );
     }
     
@@ -355,12 +375,22 @@ export async function POST(request: NextRequest) {
           priceResult: token,
           simulationParams: null,
           model: 'dexscreener',
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          }
         });
       } else {
         return NextResponse.json({
           response: priceResult.error || `No price data found for ${priceToken} on Arbitrum.`,
           simulationParams: null,
           model: 'dexscreener',
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          }
         });
       }
     }
@@ -407,6 +437,11 @@ export async function POST(request: NextRequest) {
             response: errorResponse.response,
             simulationParams: null,
             model: 'groq',
+          }, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            }
           });
         }
         
@@ -422,6 +457,11 @@ export async function POST(request: NextRequest) {
             response: geminiErrorResponse.response,
             simulationParams: null,
             model: 'gemini',
+          }, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            }
           });
         }
       }
@@ -441,6 +481,11 @@ export async function POST(request: NextRequest) {
             response: errorResponse.response,
             simulationParams: null,
             model: 'gemini',
+          }, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            }
           });
         }
         
@@ -459,6 +504,11 @@ export async function POST(request: NextRequest) {
             response: "Both AI services are temporarily unavailable. Try again in a moment.",
             simulationParams: null,
             model: 'groq',
+          }, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            }
           });
         }
       }
@@ -468,6 +518,13 @@ export async function POST(request: NextRequest) {
       response,
       simulationParams,
       model,
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      }
     });
 
   } catch (error) {
@@ -500,10 +557,16 @@ export async function POST(request: NextRequest) {
     
     // Check for specific error patterns
     const errorResponse = getErrorResponse(error);
+    
     return NextResponse.json({
       response: errorResponse.response,
       simulationParams: null,
       model: 'gemini',
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      }
     });
   }
 }
